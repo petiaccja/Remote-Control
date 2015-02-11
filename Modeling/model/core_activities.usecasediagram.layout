@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<useCaseDiagram dslVersion="1.0.0.0" absoluteBounds="0, 0, 11, 8.5" name="core_activities">
+  <useCaseModelRootMoniker Id="04fa2089-d226-4238-afa7-15a1132775c7" />
+  <nestedChildShapes>
+    <actorShape Id="dcbd7dae-ed0f-45d8-b41e-649b1f05dff3" absoluteBounds="1, 3.125, 0.5, 0.5" isReference="false" heightOffset="0">
+      <actorMoniker Id="81034178-345b-45e9-bb7e-982a46c3348a" LastKnownName="Actor1" />
+      <relativeChildShapes />
+    </actorShape>
+    <useCaseShape Id="2b09e7fe-6256-47f2-b703-350a11e6eca0" absoluteBounds="2.25, 2.125, 1, 0.5" customColor="238, 237, 131" heightOffset="0">
+      <useCaseMoniker Id="15d0a925-5a34-4c1b-97fc-32980e363bdd" LastKnownName="UseCase1" />
+      <relativeChildShapes />
+    </useCaseShape>
+  </nestedChildShapes>
+</useCaseDiagram>
