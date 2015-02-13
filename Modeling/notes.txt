@@ -38,23 +38,46 @@ The protocol is made on top of UDP as an application level protocol (like HTTP).
 It is connection based similar to TCP, but datagram based, like UDP.
 That is, it establishes a virtual connection with a remote host, then it can send datagrams (= messages = packets).
 
-Message types:
+*Message types:
 - reliable: must arrive and be acknowledged
 - unreliable: may or may not arrive, doesn't matter
 
-Ordering:
+*Sequence numbers and ordering:
 Each message has two numbers:
 - sequence number: incremental ID for each packet
 - batch number
-The batch number must be the sequence number of some previous reliable packet.
-The packet is kept in a buffer and not processed until the packet with the said batch number arrives.
 
-Security:
-Public key encoding. When the connection is established, public keys are sent with the connection request.
-Then, all headers are encoded. This way, only the reciever can read the initial (and following) sequence numbers.
-I'm no cryptographer, but hopefully this makes enough mess to make hijacking impossible.
+Reliable messages act as a barrier, forcing ordering.
+The sequence number of the latest reliable message is tracked by the reciever. Packets that arrive, and
+have a batch number greater than the tracked number, must wait until the reliable packet arrives.
 
-Message header:
+*Duplicates:
+Reliable packet duplicates will certainly be out of order, and they are dropped.
+Unreliable packets are not checked for duplicates.
+
+*Acknowledgement procedure:
+Sender:
+ - resend the packet continously until the ackonowledgement is recieved
+Reciever:
+ - send an ackowledgement for each arriving packet
+ - drop duplicates
+
+*Establishing connection:
+-> SYN
+<- SYN-ACK
+-> ACK
+*Closing connection:
+-> FIN
+<- FIN-ACK
+-> ACK
+
+*Keepalive:
+Both parties must send unreliable keepalives if no other message have been sent for some time.
+If a party does not recieve any message for that time, the connection is considered broken.
+In this case, the whole connection is closed.
+
+
+*Message header:
 +---------------------------+
 | sequence number           |   0-31 bit
 +---------------------------+
@@ -62,6 +85,26 @@ Message header:
 +---------------------------+
 | flags                     |   64-95 bit
 +---------------------------+
+
+To reduce overhead, batch number could be relative, and only 16 bits.
+
+Flags:
+name	bit
+SYN	0
+FIN	1
+ACK	2
+KPL	3 (keep alive, no relevant data, drop packet)
+
+
+
+*Security (optional):
+Public key encoding. When the connection is established, public keys are sent with the connection request.
+Then, all headers are encoded. This way, only the reciever can read the initial (and following) sequence numbers.
+I'm no cryptographer, but hopefully this makes enough mess to make hijacking impossible.
+
+
+
+
 
 
 
