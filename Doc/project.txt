@@ -1,0 +1,11 @@
+The project contains the following applications:
+
+Client (C#/Java)
+	Network Protocol
+	RC Client
+	GUI
+Server (C++)
+	Network Protocol
+	Servo Driver
+	RC Server
+	Interface (textual)
