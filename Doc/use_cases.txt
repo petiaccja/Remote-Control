@@ -1,0 +1,37 @@
+#################################
+# Remote Control
+
+# Server
+
+listen to connection requests
+disconnect client
+handle incoming messages
+manage servo driver
+manage network protocol socket
+handle emergencies
+
+# Client
+
+connect to server
+disconnect from server
+send control messages
+manage network protocol socket
+
+
+#################################
+# Network protocol
+
+listen to incoming connections
+connect to remote host by ip
+send unreliable messages
+send reliable messages
+disconnect
+
+
+#################################
+# Servo Driver
+
+add servo
+set servo parameter
+remove servo
+reset
