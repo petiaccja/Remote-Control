@@ -6,7 +6,8 @@ FILE(GLOB_RECURSE headers src/*.h*)
 
 # Filters
 
-
-
 # Project
 add_executable(Server ${sources} ${headers})
+
+# Dependencies
+target_link_libraries(Server RemoteControlProtocol)

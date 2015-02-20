@@ -5,13 +5,21 @@ cmake_minimum_required(VERSION 2.6)
 # Solution properties
 set(PROJECT_NAME Remote-Control-Server)
 
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} )
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} )
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} )
+
 project( ${PROJECT_NAME} )
 
+# Compiler defs
+add_definitions(-DSFML_STATIC)
+
 # Paths
-set(INCLUDE_PATH "../Externals/include")
+set(INCLUDE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/include)
 include_directories(${INCLUDE_PATH})
-set(LIBRARY_PATH "../Externals/lib")
+set(LIBRARY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/lib)
 link_directories(${LIBRARY_PATH}/Win32)
+
 
 # Solution build configs
 if(CMAKE_CONFIGURATION_TYPES)
