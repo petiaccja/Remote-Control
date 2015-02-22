@@ -15,6 +15,31 @@
 #include "Packet.h"
 
 
+////////////////////////////////////////////////////////////////////////////////
+// How it works.
+//
+//	*Threads*
+//	There are 2 threads.
+//	The first thread is the user's thread, on which calls to send and other
+//	function are done. Nothing unusual.
+//	The second thread is responsible for timing and tasks that need to be performed
+//	even if there's no explicit user interaction (such as keepalives).
+//	This threading scheme comes alive after the connection is established via either
+//	accept or connect, and lives until disconnect is called.
+//	
+//	*Data flow*
+//	Sending messages is done directly in send, nothing special.
+//	However, recieving is done in the second thread, in an infinite loop.
+//	The messages are then pushed into a queue, from which the recieve function
+//	takes one out. The second thread also performs filtering and processing of
+//	the messages. Protocol messages, such as keepalives are not pushed to the queue.
+//	Acks are directly sent from this thread. If a batch number references a packet
+//	that is not recieved yet, a place in the queue is reserved for it. The queue
+//	is not committed until that packet arrives.
+//
+//	*Locking*
+//	...
+////////////////////////////////////////////////////////////////////////////////
 
 class RcpSocket {
 private:
@@ -30,7 +55,7 @@ private:
 		ACK = 2, // acknowledged
 		FIN = 4, // no more messages
 		KEP = 8, // keep alive
-		REL = 16,
+		REL = 16, // reliable packet, send back ack
 	};
 public:
 	enum eState {
@@ -64,9 +89,6 @@ public:
 
 	uint16_t getLocalPort() { return socket.getLocalPort(); }
 private:
-	// reset the connection (brute-force, not graceful)
-	void reset() {};
-
 	// network communication and synchronization
 	void startIoThread();
 	void stopIoThread();

@@ -28,7 +28,7 @@ int main() {
 
 	thread socketThread1(
 		[&]() {
-			sock1.connect("188.142.171.50", 5631);
+			sock1.connect("localhost", 5631);
 			sock1.setBlocking(false);
 
 			Packet packet;
@@ -66,7 +66,7 @@ int main() {
 
 	thread socketThread2(
 		[&]() {
-		sock2.connect("188.142.171.50", 5630);
+		sock2.connect("localhost", 5630);
 		sock2.setBlocking(false);
 		
 		Packet packet;

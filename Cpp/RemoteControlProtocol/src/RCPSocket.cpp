@@ -35,7 +35,7 @@ bool RcpSocket::accept() {
 	// - wait for SYN
 	// - send SYN-ACK
 	// - wait for ACK
-	// TODO
+	// TODO...
 
 	// test simple communication without this accept stuff
 	return false;
@@ -55,7 +55,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	// - send SYN
 	// - wait for SYN-ACK
 	// - send ACK
-	// TODO
+	// TODO...
 
 	// start io thread, set states
 	timeLastSend = std::chrono::steady_clock::now();
@@ -71,11 +71,20 @@ void RcpSocket::disconnect() {
 	if (state != CONNECTED) {
 		return;
 	}
-
+	// stop io thread
 	stopIoThread();
+
+	// perform closing procedure
+	// - send FIN
+	// - wait for FIN/ACK
+	// - send ACK
+	// TODO...
+
+	// set disconnected state
 	selector.clear();
 	state = DISCONNECTED;
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // communicate
@@ -93,7 +102,8 @@ void RcpSocket::startIoThread() {
 			// - ACK for a repeatedly sent reliable packet must arrive -> connection lost
 			// - should send a keepalive (timeLastSend) -> send a keepalive
 			// - incoming message timout -> lost connection
-			// if an event occours, pump the incoming message to the queue
+			// - wait incoming reliable packet -> lost connection
+			// if a message interrupts, pump the incoming message to the queue
 
 			// select closest event in time
 			enum eClosestEventType {
@@ -182,12 +192,12 @@ void RcpSocket::startIoThread() {
 						break;
 					}
 					case TIMEOUT: {
-
-
+						// forcefully close the socket
+						selector.clear();
+						state = DISCONNECTED;
+						return;
 						break;
 					}
-					default: // there is no need for default, probably
-						break;
 				}
 			}
 			else {
