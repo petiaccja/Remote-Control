@@ -4,6 +4,7 @@
 
 class Packet {
 	friend class RcpSocket;
+	friend class RcpTester;
 public:
 	/// Create an empty packet.
 	Packet();
@@ -11,6 +12,7 @@ public:
 	Packet(Packet&& other);
 	~Packet();
 	Packet& operator=(const Packet& other);
+	Packet& operator=(Packet&& other);
 
 	/// Set the packet's content.
 	void setData(const void* data, size_t size);

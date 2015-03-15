@@ -29,6 +29,7 @@ Packet::Packet(Packet&& other) {
 	reliable = other.reliable;
 
 	other.data = nullptr;
+	other.size = 0;
 }
 
 Packet::~Packet() {
@@ -41,7 +42,16 @@ Packet& Packet::operator=(const Packet& other) {
 	new (this) Packet(other);
 	return *this;
 }
+Packet& Packet::operator=(Packet&& other) {
+	data = other.data;
+	size = other.size;
+	sequenceNumber = other.sequenceNumber;
+	reliable = other.reliable;
 
+	other.data = nullptr;
+	other.size = 0;
+	return *this;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Modifiers
