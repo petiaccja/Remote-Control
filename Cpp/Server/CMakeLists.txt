@@ -1,4 +1,4 @@
-message(-Server)
+message("-Server")
 
 # Input files
 FILE(GLOB_RECURSE sources src/*.c*)

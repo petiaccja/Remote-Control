@@ -67,58 +67,63 @@ public:
 		CONNECTED,
 	};
 
+	// Custructors & Destructor
 	RcpSocket();
 	~RcpSocket();
 
+	// Modifiers
 	bool bind(uint16_t port);
 	void unbind();
-
-	// establish connection
-	bool accept(); // long time
-	bool connect(std::string address, uint16_t port); // some time
-
-	// communicate
-	bool send(const void* data, size_t size, bool reliable); // instant
-	bool send(Packet& packet); // instant
-	bool receive(Packet& packet); // long time
-
-	// gracefully close connection
-	void disconnect(); // short time
-
-	// cancel pending operations (call from another thread)
-	void cancel();
-
-	// returns status
-	bool isConnected();
-
-	// set blocking mode
+	bool isConnected() const;
 	void setBlocking(bool isBlocking);
+	bool getBlocking() const;
+	void cancel();
+	uint16_t getLocalPort() const { return socket.getLocalPort(); }
 
-	uint16_t getLocalPort() { return socket.getLocalPort(); }
+	// Connection setup
+	bool accept();
+	bool connect(std::string address, uint16_t port);
+	void disconnect();
 
+	// Traffic
+	bool send(const void* data, size_t size, bool reliable);
+	bool send(Packet& packet);
+	bool receive(Packet& packet);
+	
+	// Debug
 	std::string debug_PrintState();
 	void debug_connect(std::string address, uint16_t port);
 private:
-	// network communication and synchronization
-	void startIoThread();
-	void stopIoThread();
-	std::atomic_bool runIoThread;
+	// --- Network resources --- //
 
 	sf::UdpSocket socket; // communication socket
 	sf::SocketSelector selector; // allows to wait for a certain time for this socket
 
-	std::thread ioThread; // recieves packets constantly, orders and enqueues them for reading, sends keep alives
-	random_access_queue<std::pair<Packet, bool>> recvQueue;
-	std::condition_variable recvCondvar;
+	// --- IO thread --- //
+
+	// this thread performs background socket communication
+	std::thread ioThread;
+	void startIoThread();
+	void stopIoThread();
+	std::atomic_bool runIoThread;
+	void ioThreadFunction();
+
+	// --- Traffic data structures --- //
+
+	// Incoming packets	
+	random_access_queue<std::pair<Packet, bool>> recvQueue; // recieved valid packets are put here
+	std::condition_variable recvCondvar;	// notified when stuff is recieved
+
+	// Incoming packet place reservation
 	struct ReservedInfo {
 		size_t index;
 		std::chrono::steady_clock::time_point sendTime;
 	};
 	using ReservedMapT = std::map<uint32_t, ReservedInfo>;
-	ReservedMapT recvReserved; // batch number and index of reserved spaces in queue
-	std::mutex socketMutex;
-	std::chrono::steady_clock::time_point timeLastSend;
+	ReservedMapT recvReserved; // batch number and index-in-recvQueue of reserved places
+	uint32_t remoteBatchNumReserved; // packets having this batch number or smaller should not cause reservation
 
+	// Packets waiting to be ACK'd
 	struct RecentPacketInfo {
 		RcpHeader header;
 		std::vector<char> data;
@@ -128,25 +133,28 @@ private:
 	using RecentPacketMapT = std::unordered_map < uint32_t, RecentPacketInfo> ; // seq num, info
 	RecentPacketMapT recentPackets; // set of recently sent reliable packets waiting to be ACKed
 
-	// information about current session
+	// --- Session description --- //
+	// Local state
 	eState state; // current state of the connection
 	uint32_t localSeqNum; // keeps track of the local sequence number, increase for each packet
 	uint32_t localBatchNum; // keeps track of the local batch number, refresh for each reliable packet sent
 
-	// information about current remote host
+	// Remote partner's state
 	uint32_t remoteSeqNum; // keeps track of the latest incoming packet's seqnum
 	uint32_t remoteBatchNum; // keeps track of the latest reliable packet's batch num
-	uint32_t remoteBatchNumReserved; // packets having this batch number or smaller should not cause reservation
 	sf::IpAddress remoteAddress; // ip address of the remote partner
 	uint16_t remotePort; // port of the remote partner
 	
-	// misc
-	bool cancelOp;
-	bool isBlocking;
+	// --- Miscallaneous --- //
+	std::mutex socketMutex; // lock whenever accessing data shared b/w main & IO thread
+	std::chrono::steady_clock::time_point timeLastSend; // the time of last packet send, including ACKs & KEPs
 
-	// bullshit
+	bool cancelOp; // uhm, it is supposed to cancel lengthy operation that are in progress, but I don't know yet
+	bool isBlocking; // sets if calls block caller or return immediatly
+
+	// Well, remove this shit from here and make it configurable and tidy
 	static const unsigned TIMEOUT_TOTAL = 5000; // connection lost if no message for % ms
-	static const unsigned TIMEOUT_SHORT = 200;
+	static const unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
 };
 
 

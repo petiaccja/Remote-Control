@@ -18,13 +18,13 @@ add_definitions(-DSFML_STATIC)
 set(INCLUDE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/include)
 include_directories(${INCLUDE_PATH})
 set(LIBRARY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/lib)
-link_directories(${LIBRARY_PATH}/Win32)
+link_directories(${LIBRARY_PATH})
 
 
 # Solution build configs
 if(CMAKE_CONFIGURATION_TYPES)
    set(CMAKE_CONFIGURATION_TYPES Debug Release)
- endif()
+endif()
 
 # Add project to solution
 add_subdirectory(RemoteControl)

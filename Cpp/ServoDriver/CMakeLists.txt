@@ -1,4 +1,4 @@
-message(-ServoDriver)
+message("-ServoDriver")
 
 # Input files
 FILE(GLOB_RECURSE sources src/*.c*)

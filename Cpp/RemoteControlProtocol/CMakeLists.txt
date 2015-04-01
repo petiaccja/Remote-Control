@@ -1,4 +1,4 @@
-message(-RemoteControlProtocol)
+message("-RemoteControlProtocol")
 
 # Input files
 FILE(GLOB_RECURSE sources src/*.c*)
