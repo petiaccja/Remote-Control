@@ -45,15 +45,19 @@
 
 class RcpSocket {
 private:
+	// RcpTester only exists for debug purposes
 	friend class RcpTester;
+
+	// RcpHeader is an internal helper structure for manageing packet headers.
 	struct RcpHeader {
 		uint32_t sequenceNumber;
 		uint32_t batchNumber;
 		uint32_t flags;
-		static std::array<unsigned char, 12> serialize(RcpHeader h);
+		static std::array<unsigned char, 12> serialize(const RcpHeader& h);
 		static RcpHeader deserialize(const void* data, size_t size);
-		inline std::array<unsigned char, 12> serialize() { return serialize(*this); }
+		inline std::array<unsigned char, 12> serialize() const { return serialize(*this); }
 	};
+	// Flags that can be associated with a packet header.
 	enum eFlags {
 		SYN = 1, // connection requested
 		ACK = 2, // acknowledged
@@ -62,38 +66,48 @@ private:
 		REL = 16, // reliable packet, send back ack
 	};
 public:
+	// Internal states of the socket.
 	enum eState {
 		DISCONNECTED,
 		CONNECTED,
+		CLOSING,
 	};
 
-	// Custructors & Destructor
+	// --- Custructors & Destructor --- //
 	RcpSocket();
 	~RcpSocket();
 
-	// Modifiers
+	// --- Modifiers --- //
 	bool bind(uint16_t port);
 	void unbind();
 	bool isConnected() const;
 	void setBlocking(bool isBlocking);
 	bool getBlocking() const;
 	void cancel();
-	uint16_t getLocalPort() const { return socket.getLocalPort(); }
+	uint16_t getLocalPort() const;
 
-	// Connection setup
+	// --- Connection setup --- //
 	bool accept();
 	bool connect(std::string address, uint16_t port);
 	void disconnect();
 
-	// Traffic
+	// --- Traffic --- //
 	bool send(const void* data, size_t size, bool reliable);
 	bool send(Packet& packet);
 	bool receive(Packet& packet);
 	
-	// Debug
+	// --- DEBUG!!! --- //
 	std::string debug_PrintState();
 	void debug_connect(std::string address, uint16_t port);
+	void debug_kill();
+	void debug_enableLog(bool value);
 private:
+	// --- Internal helper functions --- //
+	bool sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures
+	void reset(); // clean up data structures after a session
+	void replyClose(); // perform closing procedure after getting a FIN
+	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);
+
 	// --- Network resources --- //
 
 	sf::UdpSocket socket; // communication socket
@@ -101,11 +115,12 @@ private:
 
 	// --- IO thread --- //
 
-	// this thread performs background socket communication
+	// This thread performs background socket communication
 	std::thread ioThread;
+	std::atomic_bool runIoThread;
+
 	void startIoThread();
 	void stopIoThread();
-	std::atomic_bool runIoThread;
 	void ioThreadFunction();
 
 	// --- Traffic data structures --- //
@@ -117,7 +132,7 @@ private:
 	// Incoming packet place reservation
 	struct ReservedInfo {
 		size_t index;
-		std::chrono::steady_clock::time_point sendTime;
+		std::chrono::steady_clock::time_point timestamp;
 	};
 	using ReservedMapT = std::map<uint32_t, ReservedInfo>;
 	ReservedMapT recvReserved; // batch number and index-in-recvQueue of reserved places
@@ -126,11 +141,11 @@ private:
 	// Packets waiting to be ACK'd
 	struct RecentPacketInfo {
 		RcpHeader header;
-		std::vector<char> data;
+		std::vector<uint8_t> data;
 		std::chrono::steady_clock::time_point send;
 		std::chrono::steady_clock::time_point lastResend;
 	};
-	using RecentPacketMapT = std::unordered_map < uint32_t, RecentPacketInfo> ; // seq num, info
+	using RecentPacketMapT = std::unordered_map < uint32_t, RecentPacketInfo> ; // batch num, info
 	RecentPacketMapT recentPackets; // set of recently sent reliable packets waiting to be ACKed
 
 	// --- Session description --- //
@@ -155,6 +170,20 @@ private:
 	// Well, remove this shit from here and make it configurable and tidy
 	static const unsigned TIMEOUT_TOTAL = 5000; // connection lost if no message for % ms
 	static const unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
+
+
+	// DEBUG!!!
+	bool debugLog;
+	static std::mutex debugLock;
+	enum eDir {
+		RECV,
+		SEND,
+	};
+	void debugPrintMsg(RcpHeader, eDir);
+	friend std::ostream& operator<<(std::ostream& os, RcpHeader h);
+	void initDebug();
+	unsigned color;
+	static unsigned colorSt;
 };
 
 

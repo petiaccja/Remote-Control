@@ -36,10 +36,12 @@ public:
 	// assignement operators
 	random_access_queue<T>& operator=(const random_access_queue<T>& other) {
 		queue_type::operator=(other);
+		return *this;
 	}
 
 	random_access_queue<T>& operator=(random_access_queue<T>&& other) {
 		queue_type::operator=(other);
+		return *this;
 	}
 
 	// index operator
