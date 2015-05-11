@@ -17,20 +17,22 @@ using namespace std::chrono; // long names were unreadable :(
 RcpSocket::RcpSocket() {
 	state = DISCONNECTED;
 	socket.setBlocking(false);
-	cancelOp = false;
 	localSeqNum = localBatchNum = 0;
 	remoteSeqNum = remoteBatchNum = 0;
 	remoteBatchNumReserved = remoteBatchNum;
 	runIoThread = false;
 
+	cancelCallId = 896345; // in the end it doesn't even matter | shit, I'm that programmer again... 
+	cancelNotify = cancelCallId;
+
 	initDebug(); // DEBUG
 }
 
 RcpSocket::~RcpSocket() {
+	disconnect();
 	if (ioThread.joinable()) {
 		ioThread.join();
 	}
-	disconnect();
 }
 
 
@@ -40,6 +42,9 @@ RcpSocket::~RcpSocket() {
 bool RcpSocket::bind(uint16_t port) {
 	if (state == CONNECTED) {
 		return false;
+	}
+	if (port == AnyPort) {
+		port = sf::UdpSocket::AnyPort;
 	}
 	bool success = socket.bind(port) == sf::UdpSocket::Done;
 	if (success) {
@@ -54,16 +59,40 @@ bool RcpSocket::bind(uint16_t port) {
 void RcpSocket::unbind() {
 	if (state != CONNECTED) {
 		socket.unbind();
-		selector.clear();
+		selector.remove(socket);
 	}
 }
 
+bool RcpSocket::isBound() const {
+	return socket.getLocalPort() != 0;
+}
+
 void RcpSocket::cancel() {
-	// TODO
+	std::lock_guard<std::mutex> lk(socketMutex);
+
+	// send a cancel packet to self
+	RcpHeader header;
+	header.sequenceNumber = cancelCallId;
+	header.batchNumber = cancelCallId;
+	header.flags = CANCEL;
+	auto rawData = makePacket(header, nullptr, 0);
+	socket.send(rawData.data(), rawData.size(), "localhost", getLocalPort());
+
+	// notify condvar
+	cancelNotify = cancelCallId;
+	recvCondvar.notify_all();
 }
 
 bool RcpSocket::isConnected() const {
 	return state == CONNECTED;
+}
+
+std::string RcpSocket::getRemoteAddress() const {
+	return remoteAddress.toString();
+}
+
+uint16_t RcpSocket::getRemotePort() const {
+	return remotePort;
 }
 
 void RcpSocket::setBlocking(bool isBlocking) {
@@ -82,7 +111,9 @@ uint16_t RcpSocket::getLocalPort() const {
 // Connection setup
 
 bool RcpSocket::accept() {
-	if (state != DISCONNECTED) {
+	cancelCallId++;
+
+	if (state != DISCONNECTED || !isBound()) {
 		return false;
 	}
 
@@ -101,13 +132,34 @@ bool RcpSocket::accept() {
 	uint16_t responsePort;
 
 	// - wait for SYN
+	// EZ ITT EL VAN BASZVA!
+	// LEHET MÁN JÓ
 	bool isData = false;
-	while (!(isData = selector.wait(sf::milliseconds(TIMEOUT_SHORT)))) {
-		// empty //
+	while (!isData) {
+		if (!selector.wait()) {
+			continue;
+		}
+
+		// recieve packet
+		socket.receive(packet, remoteAddress, remotePort); // intentionally read into remoteWhatever
+
+		// decode header
+		if (packet.getDataSize() < 12) {
+			continue;
+		}
+		header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
+		debugPrintMsg(header, RECV);
+
+		// react to header
+		if (header.flags == CANCEL && cancelCallId == header.sequenceNumber) {
+			return false;
+		}
+		else if (header.flags == SYN) {
+			isData = true;
+		}
 	}
-	if (!isData) {
-		return false;
-	}
+	// DE IDÁIG KÉNE TARTANIA
+	/*
 	socket.receive(packet, remoteAddress, remotePort); // intentionally read into remoteWhatever
 	if (packet.getDataSize() < 12) {
 		cout << "not enough data" << endl;
@@ -119,6 +171,9 @@ bool RcpSocket::accept() {
 		cout << "not a SYN" << endl;
 		return false;
 	}
+	//*/
+	// KB. IDÁIG
+
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
 	remoteBatchNumReserved = remoteBatchNum;
@@ -132,6 +187,41 @@ bool RcpSocket::accept() {
 	debugPrintMsg(header, SEND); // DEBUG
 
 	// - wait for ACK
+	auto waitBegin = steady_clock::now();
+	long long timeLeft;
+	bool isAck;
+	do {
+		// how much time is left to get get a packet
+		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + TIMEOUT_TOTAL;
+
+		// wait for a packet
+		if (!selector.wait(sf::milliseconds(timeLeft))) {
+			return false;
+		}
+		socket.receive(packet, responseAddress, responsePort);
+
+		// decode packet
+		if (packet.getDataSize() < 12 || remoteAddress != responseAddress || remotePort != responsePort) {
+			continue;
+		}
+		header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
+		debugPrintMsg(header, RECV);
+
+		// react to packet
+		if (header.flags == CANCEL && header.sequenceNumber == cancelCallId) {
+			return false;
+		}
+		else if (header.flags == ACK && header.sequenceNumber == remoteSeqNum + 1 && header.batchNumber == remoteBatchNum) {
+			isAck = true;
+			break;
+		}
+	} while (timeLeft > 0);
+
+	if (!isAck) {
+		return false;
+	}
+
+	/*
 	if (!selector.wait(sf::milliseconds(TIMEOUT_TOTAL))) {
 		cout << "ack did not arrive" << endl;
 		return false;
@@ -147,6 +237,8 @@ bool RcpSocket::accept() {
 		cout << "not ACK, seq or batch numbers not corresponding";
 		return false;
 	}
+	*/
+
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
 	remoteBatchNumReserved = remoteBatchNum;
@@ -161,7 +253,9 @@ bool RcpSocket::accept() {
 }
 
 bool RcpSocket::connect(std::string address, uint16_t port) {
-	if (state != DISCONNECTED) {
+	cancelCallId++;
+
+	if (state != DISCONNECTED || !isBound()) {
 		return false;
 	}
 
@@ -193,6 +287,41 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	debugPrintMsg(header, SEND); // DEBUG
 
 	// - wait for SYN-ACK
+	auto waitBegin = steady_clock::now();
+	long long timeLeft;
+	bool isSynAck = false;
+	do {
+		// how much time is left to get get a packet
+		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + TIMEOUT_TOTAL;
+
+		// wait for a packet
+		if (!selector.wait(sf::milliseconds(timeLeft))) {
+			return false;
+		}
+		socket.receive(packet, responseAddress, responsePort);
+
+		// decode packet
+		if (packet.getDataSize() < 12 || remoteAddress != responseAddress || remotePort != responsePort) {
+			continue;
+		}
+		header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
+		debugPrintMsg(header, RECV);
+
+		// react to packet
+		if (header.flags == CANCEL && header.sequenceNumber == cancelCallId) {
+			return false;
+		}
+		else if (header.flags == (SYN | ACK)) {
+			isSynAck = true;
+			break;
+		}
+	} while (timeLeft > 0);
+
+	if (!isSynAck) {
+		return false;
+	}
+
+	/*
 	if (!selector.wait(sf::milliseconds(TIMEOUT_TOTAL))) {
 		cout << "request timed out" << endl;
 		return false;
@@ -208,12 +337,13 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 		cout << "syn-ack expected but not recieved" << endl;
 		return false;
 	}
+	*/
 
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
 	remoteBatchNumReserved = remoteBatchNum;
 
-	// send ACK
+	// - send ACK
 	header.sequenceNumber = localSeqNum++;
 	header.batchNumber = localBatchNum;
 	header.flags = ACK;
@@ -381,8 +511,8 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 	}
 	// create socket header + data block
 	RcpHeader header;
-	header.sequenceNumber = localSeqNum;
-	header.batchNumber = localBatchNum;
+	header.sequenceNumber = ++localSeqNum;
+	header.batchNumber = (flags & REL) ? ++localBatchNum : localBatchNum;
 	header.flags = flags;
 	
 	auto rawData = makePacket(header, data, size);
@@ -409,12 +539,6 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 			);
 	}
 
-	// set next batch and sequence numbers
-	if ((flags & REL) != 0) {
-		localBatchNum++;
-	}
-	localSeqNum++;
-
 	// set last sending time to manage timeouts
 	timeLastSend = steady_clock::now();
 
@@ -423,6 +547,8 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 
 
 bool RcpSocket::receive(Packet& packet) {
+	cancelCallId++;
+
 	// check errors
 	if (state != CONNECTED) {
 		return false;
@@ -435,10 +561,14 @@ bool RcpSocket::receive(Packet& packet) {
 
 	// wait on condvar
 	bool isData = false;
-	auto IsDataPred = [this] { return recvQueue.size() > 0 && recvQueue.front().second == true; };
+	auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId; };
 	if (isBlocking) {
-		while (!cancelOp && !isData) {
-			isData = recvCondvar.wait_for(lk, milliseconds(TIMEOUT_SHORT), IsDataPred);
+		recvCondvar.wait(lk, IsDataPred);
+		if (cancelNotify == cancelCallId) {
+			return false;
+		}
+		else {
+			isData = true;
 		}
 	}
 	else {
@@ -472,7 +602,7 @@ bool RcpSocket::receive(Packet& packet) {
 
 
 void RcpSocket::startIoThread() {
-	if (runIoThread) {
+	if (runIoThread == true) {
 		return;
 	}
 	if (ioThread.joinable()) {
@@ -486,6 +616,7 @@ void RcpSocket::startIoThread() {
 			reset();
 			state = DISCONNECTED;
 		}
+		runIoThread = false;
 	});
 }
 
@@ -510,99 +641,22 @@ void RcpSocket::ioThreadFunction() {
 	//			- pump the incoming message to the queue
 	// 2.2. Act according to what event timed out 
 
-	steady_clock::time_point timeLastRecieved = steady_clock::now();
+	timeLastRecieved = steady_clock::now();
 
 	while (runIoThread) {
 		// ------------------------------------ //
 		// --- Select event closest in time --- //
 		// ------------------------------------ //
 
-		// Event definitions
-		enum eClosestEventType {
-			ACK_RESEND,
-			ACK_TIMEOUT,
-			KEEPALIVE,
-			RECV_TIMEOUT,
-			RESERVE_TIMEOUT,
-			RELOOP,
-		};
-		microseconds eventRemaining(TIMEOUT_SHORT * 1000);
-		eClosestEventType eventType = RELOOP;
-
-		steady_clock::time_point now = steady_clock::now();
-
-		steady_clock::time_point oldestResend = now;
-		steady_clock::time_point oldestSend = now;
-		uint32_t resendBatchnum = 0; // this reliable packet has to be resent
-		RecentPacketInfo* resendInfo = nullptr; // information about the packet to be resent
-		bool isAckResend = false; // resend packet waiting for ack
-		bool isAckTimedout = false; // packet waiting for ack timed out
-
-		// lock mutex
-		socketMutex.lock();
-
-		// [1] Check if any reliable packet should be resent
-		for (auto item : recentPackets) {
-			if (item.second.lastResend <= oldestResend) {
-				oldestResend = item.second.lastResend;
-				resendBatchnum = item.first;
-				isAckResend = true;
-			}
-			if (item.second.send <= oldestSend) {
-				oldestSend = item.second.send;
-				isAckTimedout = true;
-			}
-		}
-		if (isAckResend) {
-			auto it = recentPackets.find(resendBatchnum);
-			resendInfo = &it->second;
-			eventRemaining = duration_cast<microseconds>(oldestResend + milliseconds(TIMEOUT_SHORT) - now);
-			eventType = ACK_RESEND;
-		}
-
-		// [2] Check recvQueue reserved places
-		microseconds reservedRemaining(2*TIMEOUT_TOTAL*1000);
-		bool isReservedTimeout = false;
-		for (auto it : recvReserved) {
-			microseconds rem = duration_cast<microseconds>(it.second.timestamp - now + milliseconds(TIMEOUT_TOTAL));
-			reservedRemaining = duration_cast<milliseconds>(reservedRemaining < rem ? reservedRemaining : rem);
-			isReservedTimeout = true;
-		}
-		if (isReservedTimeout && reservedRemaining < eventRemaining) {
-			eventRemaining = reservedRemaining;
-			eventType = RESERVE_TIMEOUT;
-		}
-
-		// unlock mutex
-		socketMutex.unlock();
-
-		// [3] Check if we have an outbound reliable packet that was not ackowledged in time
-		microseconds ackTimeoutRemaining;
-		ackTimeoutRemaining = duration_cast<microseconds>(oldestSend + milliseconds(TIMEOUT_TOTAL) - now);
-		if (isAckTimedout && ackTimeoutRemaining < eventRemaining) {
-			eventRemaining = ackTimeoutRemaining;
-			eventType = ACK_TIMEOUT;
-		}
-		// [4] Keep connection alive
-		microseconds keepaliveRemaining;
-		keepaliveRemaining = duration_cast<microseconds>(timeLastSend + milliseconds(TIMEOUT_SHORT) - now);
-		if (keepaliveRemaining < eventRemaining) {
-			eventRemaining = keepaliveRemaining;
-			eventType = KEEPALIVE;
-		}
-		// [5] Check total timeout
-		microseconds timeoutRemaining = duration_cast<microseconds>(timeLastRecieved + milliseconds(TIMEOUT_TOTAL) - now);
-		if (eventRemaining > timeoutRemaining) {
-			eventRemaining = timeoutRemaining;
-			eventType = RECV_TIMEOUT;
-		}
+		EventArgs eventArgs;
+		eClosestEventType eventType = getNextEvent(eventArgs);
 
 		// -------------------------------- //
 		// --- Get incoming socket data --- //
 		// -------------------------------- //
 
 		// Calculate time in microseconds Selector should wait at most 
-		long long usSleep = eventRemaining.count();
+		long long usSleep = eventArgs.remaining.count();
 		usSleep = std::max(usSleep, 1ll); // for SFML, 0 means infinity, hence the "1"
 
 		// Wait on the socket for incoming UDP traffic
@@ -622,11 +676,11 @@ void RcpSocket::ioThreadFunction() {
 					continue;
 				case ACK_RESEND: {
 					// don't use the send function: it cannot lock the mutex, performs other unneeded stuff, etc...
-					auto rawData = makePacket(resendInfo->header, resendInfo->data.data(), resendInfo->data.size());
+					auto rawData = makePacket(eventArgs.resendInfo->header, eventArgs.resendInfo->data.data(), eventArgs.resendInfo->data.size());
 					socket.send(rawData.data(), rawData.size(), remoteAddress, remotePort);
-					debugPrintMsg(resendInfo->header, SEND); // DEBUG
+					debugPrintMsg(eventArgs.resendInfo->header, SEND); // DEBUG
 					timeLastSend = steady_clock::now();
-					resendInfo->lastResend = timeLastSend;
+					eventArgs.resendInfo->lastResend = timeLastSend;
 					break;
 				}
 				case KEEPALIVE: {
@@ -659,65 +713,62 @@ void RcpSocket::ioThreadFunction() {
 
 			// extract data from socket
 			sf::Packet rawPacket;
-			sf::IpAddress address;
-			uint16_t port;
-			socket.receive(rawPacket, address, port);
+			sf::IpAddress sender;
+			uint16_t senderPort;
+			socket.receive(rawPacket, sender, senderPort);
 
 			// extract rcp header and payload from packet
-			if (rawPacket.getDataSize() < 12) {
-				continue;
-			}
-			RcpHeader header = RcpHeader::deserialize(rawPacket.getData(), 12);
-			debugPrintMsg(header, RECV);
+			RcpHeader header;
 			Packet packet;
-			packet.setData((char*)rawPacket.getData() + 12, rawPacket.getDataSize() - 12);
-			packet.reliable = (header.flags & REL) != 0;
-			packet.sequenceNumber = header.sequenceNumber;
-
-			// filter out false packets:
-			// - address must be correct
-			// - port must be correct
-			// - sequence number must be reasonable
-			if (address != remoteAddress || port != remotePort) {
-				continue;
-			}
+			bool isValid = decodeDatagram(rawPacket, sender, senderPort, header, packet);
+			debugPrintMsg(header, RECV);
 
 			// set time of last valid packet
 			timeLastRecieved = steady_clock::now();
 
 			// handle special packets
-			// got a keepalive: skip packet
-			if (header.flags == KEP) {
-				continue;
-			}
-			// recent packet was acknowledged: remove from waiting list
-			else if (header.flags == ACK) {
-				// remove the packet from the recent ack list
-				auto it = recentPackets.find(header.batchNumber); // ack packets batch number contains the acknowledged packet's b.n.
-				if (it != recentPackets.end()) {
-					recentPackets.erase(it);
+			switch (header.flags) {
+				case KEP: {
+					continue;
 				}
-				continue;
-			}
-			// got a reliable packet: send an ack
-			else if (header.flags == REL) {
-				// send an acknowledgement
-				RcpHeader ackHeader;
-				ackHeader.sequenceNumber = header.sequenceNumber;
-				ackHeader.batchNumber = header.batchNumber;
-				ackHeader.flags = ACK;
-				auto ackData = RcpHeader::serialize(ackHeader);
-				socket.send(ackData.data(), ackData.size(), remoteAddress, remotePort);
-				debugPrintMsg(ackHeader, SEND);
-			}
-			// got a FIN signal
-			else if (header.flags == FIN) {
-				state = CLOSING;
-				return;
+				case ACK: {
+					// remove the packet from the recent ack list
+					auto it = recentPackets.find(header.batchNumber); // ack packets batch number contains the acknowledged packet's b.n.
+					if (it != recentPackets.end()) {
+						recentPackets.erase(it);
+					}
+
+					continue;
+				}
+				case REL: {
+					// send an acknowledgement
+					RcpHeader ackHeader;
+					ackHeader.sequenceNumber = header.sequenceNumber;
+					ackHeader.batchNumber = header.batchNumber;
+					ackHeader.flags = ACK;
+					auto ackData = RcpHeader::serialize(ackHeader);
+					socket.send(ackData.data(), ackData.size(), remoteAddress, remotePort);
+					debugPrintMsg(ackHeader, SEND);
+
+					break;
+				}
+				case FIN: {
+					state = CLOSING;
+					return;
+				}
+				case CANCEL:
+					continue;
+				case 0: {
+					break;
+				}
+				default:
+					continue;
 			}
 
+
+			/*
 			// reserve space(s) in queue if batch number references a packet that has not arrived yet
-			for (int i = 0; remoteBatchNumReserved < header.batchNumber && i < (ptrdiff_t)header.batchNumber - (ptrdiff_t)remoteBatchNum; i++) {
+			for (int i = 0; remoteBatchNumReserved <= header.batchNumber && i <= (ptrdiff_t)header.batchNumber - (ptrdiff_t)remoteBatchNum; i++) {
 				recvReserved.insert(ReservedMapT::value_type(remoteBatchNum + i, { recvQueue.size(), steady_clock::now() }));
 				recvQueue.push({ Packet(), false });
 				remoteBatchNumReserved++;
@@ -731,7 +782,7 @@ void RcpSocket::ioThreadFunction() {
 
 			// fill space if there's any reserved for this packet
 			ReservedMapT::iterator it;
-			if ((header.flags & REL) && (header.batchNumber < remoteBatchNum)) {
+			if ((header.flags & REL) && (header.batchNumber <= remoteBatchNumReserved)) {
 				if ((it = recvReserved.find(header.batchNumber)) != recvReserved.end()) {
 					recvQueue[it->second.index].first = std::move(packet); // don't use this packet again; for performance reasons
 					recvQueue[it->second.index].second = true;
@@ -745,6 +796,40 @@ void RcpSocket::ioThreadFunction() {
 			else {
 				recvQueue.push({ packet, true });
 			}
+			//*/
+
+			// reserve spaces in queue if batch number references a late packet
+			long long numSpacesReserve = (long long)header.batchNumber - (long long)remoteBatchNumReserved;
+			for (long long i = 0; i < numSpacesReserve; ++i) {
+				remoteBatchNumReserved++;
+				recvReserved.insert({ remoteBatchNumReserved,{ recvQueue.size(), steady_clock::now() } });
+				recvQueue.push({ Packet(), false });
+			}
+
+			// fill space if there's one reserved for this packet
+			// reliable packets always have their space reserved because of the above lines!
+			// if they don't, then they must be duplicates, and will be silently dropped
+			if (header.flags & REL) {
+				auto it = recvReserved.find(header.batchNumber);
+				if (it != recvReserved.end()) {
+					recvQueue[it->second.index].first = std::move(packet); // don't use this packet again; moving for performance reasons
+					recvQueue[it->second.index].second = true;
+					recvReserved.erase(it);
+				}
+				else {
+					cout << "duplicate";
+					continue;
+				}
+			}
+			else {
+				recvQueue.push({ packet, true });
+			}
+
+
+			// set parameters for remote peer
+			remoteSeqNum = std::max(remoteSeqNum, header.sequenceNumber);
+			remoteBatchNum = header.flags & REL ? std::max(remoteBatchNum, header.batchNumber) : remoteBatchNum;
+
 
 			// unlock mutex (lock_guard) and notify
 			recvCondvar.notify_all();
@@ -818,6 +903,120 @@ std::vector<uint8_t> RcpSocket::makePacket(const RcpHeader& header, const void* 
 
 
 
+bool RcpSocket::decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, Packet& rcpPacket) {
+	// size must be at least 12 to contain the RCP header
+	if (packet.getDataSize() < 12) {
+		return false;
+	}
+	// sender and port must match remote peer's
+	if (sender != remoteAddress && port != remotePort) {
+		return false;
+	}
+
+	// decode the header
+	RcpHeader header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
+
+	// batch number and sequence number must be within a reasonable range
+	if (abs((ptrdiff_t)remoteBatchNum - (ptrdiff_t)header.batchNumber) > 1000) {
+		return false;
+	}
+	if (abs((ptrdiff_t)remoteSeqNum - (ptrdiff_t)header.sequenceNumber) > 5000) {
+		return false;
+	}
+
+	// all fine, get the data and form a packet
+	Packet tmp;
+	tmp.setData((char*)packet.getData() + 12, packet.getDataSize() - 12);
+	tmp.sequenceNumber = header.sequenceNumber;
+	tmp.reliable = (header.flags & REL) != 0;
+
+	// set output parameters
+	rcpPacket = std::move(tmp);
+	rcpHeader = header;
+
+	return true;
+}
+
+
+auto RcpSocket::getNextEvent(EventArgs& args) -> eClosestEventType {
+	microseconds eventRemaining(TIMEOUT_SHORT * 1000);
+	eClosestEventType eventType = RELOOP;
+
+	steady_clock::time_point now = steady_clock::now();
+
+	steady_clock::time_point oldestResend = now;
+	steady_clock::time_point oldestSend = now;
+	uint32_t resendBatchnum = 0; // this reliable packet has to be resent
+	RecentPacketInfo* resendInfo = nullptr; // information about the packet to be resent
+	bool isAckResend = false; // resend packet waiting for ack
+	bool isAckTimedout = false; // packet waiting for ack timed out
+
+								// lock mutex
+	socketMutex.lock();
+
+	// [1] Check if any reliable packet should be resent
+	for (auto item : recentPackets) {
+		if (item.second.lastResend <= oldestResend) {
+			oldestResend = item.second.lastResend;
+			resendBatchnum = item.first;
+			isAckResend = true;
+		}
+		if (item.second.send <= oldestSend) {
+			oldestSend = item.second.send;
+			isAckTimedout = true;
+		}
+	}
+	if (isAckResend) {
+		auto it = recentPackets.find(resendBatchnum);
+		resendInfo = &it->second;
+		eventRemaining = duration_cast<microseconds>(oldestResend + milliseconds(TIMEOUT_SHORT) - now);
+		eventType = ACK_RESEND;
+	}
+
+	// [2] Check recvQueue reserved places
+	microseconds reservedRemaining(2 * TIMEOUT_TOTAL * 1000);
+	bool isReservedTimeout = false;
+	for (auto it : recvReserved) {
+		microseconds rem = duration_cast<microseconds>(it.second.timestamp - now + milliseconds(TIMEOUT_TOTAL));
+		reservedRemaining = duration_cast<milliseconds>(reservedRemaining < rem ? reservedRemaining : rem);
+		isReservedTimeout = true;
+	}
+	if (isReservedTimeout && reservedRemaining < eventRemaining) {
+		eventRemaining = reservedRemaining;
+		eventType = RESERVE_TIMEOUT;
+	}
+
+	// unlock mutex
+	socketMutex.unlock();
+
+	// [3] Check if we have an outbound reliable packet that was not ackowledged in time
+	microseconds ackTimeoutRemaining;
+	ackTimeoutRemaining = duration_cast<microseconds>(oldestSend + milliseconds(TIMEOUT_TOTAL) - now);
+	if (isAckTimedout && ackTimeoutRemaining < eventRemaining) {
+		eventRemaining = ackTimeoutRemaining;
+		eventType = ACK_TIMEOUT;
+	}
+	// [4] Keep connection alive
+	microseconds keepaliveRemaining;
+	keepaliveRemaining = duration_cast<microseconds>(timeLastSend + milliseconds(TIMEOUT_SHORT) - now);
+	if (keepaliveRemaining < eventRemaining) {
+		eventRemaining = keepaliveRemaining;
+		eventType = KEEPALIVE;
+	}
+	// [5] Check total timeout
+	microseconds timeoutRemaining = duration_cast<microseconds>(timeLastRecieved + milliseconds(TIMEOUT_TOTAL) - now);
+	if (eventRemaining > timeoutRemaining) {
+		eventRemaining = timeoutRemaining;
+		eventType = RECV_TIMEOUT;
+	}
+
+	args.remaining = eventRemaining;
+	args.resendInfo = resendInfo;
+	return eventType;
+}
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Helpers
 
@@ -846,7 +1045,7 @@ auto RcpSocket::RcpHeader::deserialize(const void* data, size_t size) -> RcpHead
 	RcpHeader h;
 	h.sequenceNumber = h.batchNumber = h.flags = 0;
 
-	if (size != 12) {
+	if (size < 12) {
 		return h;
 	}
 	auto cdata = (unsigned char*)data;
@@ -967,34 +1166,40 @@ std::ostream& operator<<(std::ostream& os, RcpSocket::RcpHeader header) {
 	std::string flags;
 
 	bool isFirst = true;
-	if (header.flags & RcpTester::ACK) {
+	if (header.flags & RcpSocket::ACK) {
 		if (!isFirst)
 			flags += " | ";
 		flags += "ACK";
 		isFirst = false;
 	}
-	if (header.flags & RcpTester::REL) {
+	if (header.flags & RcpSocket::REL) {
 		if (!isFirst)
 			flags += " | ";
 		flags += "REL";
 		isFirst = false;
 	}
-	if (header.flags & RcpTester::KEP) {
+	if (header.flags & RcpSocket::KEP) {
 		if (!isFirst)
 			flags += " | ";
 		flags += "KEP";
 		isFirst = false;
 	}
-	if (header.flags & RcpTester::SYN) {
+	if (header.flags & RcpSocket::SYN) {
 		if (!isFirst)
 			flags += " | ";
 		flags += "SYN";
 		isFirst = false;
 	}
-	if (header.flags & RcpTester::FIN) {
+	if (header.flags & RcpSocket::FIN) {
 		if (!isFirst)
 			flags += " | ";
 		flags += "FIN";
+		isFirst = false;
+	}
+	if (header.flags & RcpSocket::CANCEL) {
+		if (!isFirst)
+			flags += " | ";
+		flags += "CANCEL";
 		isFirst = false;
 	}
 	if (isFirst) {
@@ -1040,6 +1245,7 @@ void RcpSocket::debugPrintMsg(RcpHeader header, eDir dir) {
 }
 
 void RcpSocket::initDebug() {
+	debugLog = false;
 	color = colorSt % 14 + 1;
 	colorSt++;
 }
@@ -1089,3 +1295,40 @@ bool RcpTester::receive(Packet& packet, RcpHeader& header) {
 	}
 
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// CODE GRAVEYARD
+
+/*
+ioThreadFunction, handling special packets -> changed to switch
+
+if (header.flags == KEP) {
+continue;
+}
+// recent packet was acknowledged: remove from waiting list
+else if (header.flags == ACK) {
+// remove the packet from the recent ack list
+auto it = recentPackets.find(header.batchNumber); // ack packets batch number contains the acknowledged packet's b.n.
+if (it != recentPackets.end()) {
+recentPackets.erase(it);
+}
+continue;
+}
+// got a reliable packet: send an ack
+else if (header.flags == REL) {
+// send an acknowledgement
+RcpHeader ackHeader;
+ackHeader.sequenceNumber = header.sequenceNumber;
+ackHeader.batchNumber = header.batchNumber;
+ackHeader.flags = ACK;
+auto ackData = RcpHeader::serialize(ackHeader);
+socket.send(ackData.data(), ackData.size(), remoteAddress, remotePort);
+debugPrintMsg(ackHeader, SEND);
+}
+// got a FIN signal
+else if (header.flags == FIN) {
+state = CLOSING;
+return;
+}
+*/

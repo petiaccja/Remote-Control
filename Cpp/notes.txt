@@ -1,0 +1,16 @@
+UNTESTED FEATURES:
+
+Add tests for:
++sending reliable packets
++succesfully recieve() with reserved spaces (reserved space indices should change)
++force the resending of recent reliable packets
++timeout of reserved places (don't send expected reliable packets)
++force timeout of recent reliable packets (total ack starvation)
++acknowledge a reliable packet
+-closing socket with bunch of pending outbound reliable packets
+
+
+
+KNOWN ISSUES:
+
+[fixed] startIoThread blocks forever when attempting to call it while thread already running

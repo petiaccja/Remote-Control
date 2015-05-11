@@ -31,4 +31,5 @@ add_subdirectory(RemoteControl)
 add_subdirectory(RemoteControlProtocol)
 add_subdirectory(Server)
 add_subdirectory(ServoDriver)
+add_subdirectory(Test)
 

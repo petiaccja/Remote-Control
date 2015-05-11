@@ -48,7 +48,7 @@ private:
 	// RcpTester only exists for debug purposes
 	friend class RcpTester;
 
-	// RcpHeader is an internal helper structure for manageing packet headers.
+	// RcpHeader is an internal helper structure for managing packet headers.
 	struct RcpHeader {
 		uint32_t sequenceNumber;
 		uint32_t batchNumber;
@@ -58,14 +58,31 @@ private:
 		inline std::array<unsigned char, 12> serialize() const { return serialize(*this); }
 	};
 	// Flags that can be associated with a packet header.
-	enum eFlags {
+	enum eFlags : uint32_t {
 		SYN = 1, // connection requested
 		ACK = 2, // acknowledged
 		FIN = 4, // no more messages
 		KEP = 8, // keep alive
 		REL = 16, // reliable packet, send back ack
+		CANCEL = 1u << 31, // special packet used to wake up selectors and cause cancellation of pending operation
 	};
-public:
+
+	// Event definitions
+	enum eClosestEventType {
+		ACK_RESEND,
+		ACK_TIMEOUT,
+		KEEPALIVE,
+		RECV_TIMEOUT,
+		RESERVE_TIMEOUT,
+		RELOOP,
+	};
+
+	struct RecentPacketInfo;
+	struct EventArgs {
+		std::chrono::microseconds remaining;
+		RecentPacketInfo* resendInfo;
+	};
+
 	// Internal states of the socket.
 	enum eState {
 		DISCONNECTED,
@@ -73,18 +90,27 @@ public:
 		CLOSING,
 	};
 
+public:
+	static const int AnyPort = 0;
+
 	// --- Custructors & Destructor --- //
 	RcpSocket();
 	~RcpSocket();
 
 	// --- Modifiers --- //
+	// binding
 	bool bind(uint16_t port);
 	void unbind();
+	bool isBound() const;
+	// connection
 	bool isConnected() const;
+	std::string getRemoteAddress() const;
+	uint16_t getRemotePort() const;
+	uint16_t getLocalPort() const;
+	// blocking, cancel
 	void setBlocking(bool isBlocking);
 	bool getBlocking() const;
 	void cancel();
-	uint16_t getLocalPort() const;
 
 	// --- Connection setup --- //
 	bool accept();
@@ -102,12 +128,6 @@ public:
 	void debug_kill();
 	void debug_enableLog(bool value);
 private:
-	// --- Internal helper functions --- //
-	bool sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures
-	void reset(); // clean up data structures after a session
-	void replyClose(); // perform closing procedure after getting a FIN
-	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);
-
 	// --- Network resources --- //
 
 	sf::UdpSocket socket; // communication socket
@@ -136,7 +156,7 @@ private:
 	};
 	using ReservedMapT = std::map<uint32_t, ReservedInfo>;
 	ReservedMapT recvReserved; // batch number and index-in-recvQueue of reserved places
-	uint32_t remoteBatchNumReserved; // packets having this batch number or smaller should not cause reservation
+	uint32_t remoteBatchNumReserved; // reliable packets having this or smaller batch number have space reserved or been already committed
 
 	// Packets waiting to be ACK'd
 	struct RecentPacketInfo {
@@ -163,14 +183,25 @@ private:
 	// --- Miscallaneous --- //
 	std::mutex socketMutex; // lock whenever accessing data shared b/w main & IO thread
 	std::chrono::steady_clock::time_point timeLastSend; // the time of last packet send, including ACKs & KEPs
+	std::chrono::steady_clock::time_point timeLastRecieved;
 
-	bool cancelOp; // uhm, it is supposed to cancel lengthy operation that are in progress, but I don't know yet
 	bool isBlocking; // sets if calls block caller or return immediatly
 
 	// Well, remove this shit from here and make it configurable and tidy
 	static const unsigned TIMEOUT_TOTAL = 5000; // connection lost if no message for % ms
 	static const unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
 
+	// --- Internal helper functions --- //
+	bool sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures
+	void reset(); // clean up data structures after a session
+	void replyClose(); // perform closing procedure after getting a FIN
+	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);
+	bool decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, Packet& rcpPacket);
+	eClosestEventType getNextEvent(EventArgs& args);
+
+	// --- Cancellation --- //
+	size_t cancelCallId;
+	std::atomic<size_t> cancelNotify;
 
 	// DEBUG!!!
 	bool debugLog;
