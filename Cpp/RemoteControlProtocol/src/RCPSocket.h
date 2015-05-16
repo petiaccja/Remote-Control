@@ -32,11 +32,11 @@
 //	*Data flow*
 //	Sending messages is done directly in send, nothing special.
 //	However, recieving is done in the second thread, in an infinite loop.
-//	The messages are then pushed into a queue, from which the recieve function
+//	The messages are then pushed into a queue, from which the receive function
 //	takes one out. The second thread also performs filtering and processing of
 //	the messages. Protocol messages, such as keepalives are not pushed to the queue.
 //	Acks are directly sent from this thread. If a batch number references a packet
-//	that is not recieved yet, a place in the queue is reserved for it. The queue
+//	that is not received yet, a place in the queue is reserved for it. The queue
 //	is not committed until that packet arrives.
 //
 //	*Locking*
@@ -92,6 +92,7 @@ private:
 
 public:
 	static const int AnyPort = 0;
+	static const int MaxDatagramSize = sf::UdpSocket::MaxDatagramSize - 12;
 
 	// --- Custructors & Destructor --- //
 	RcpSocket();
@@ -122,6 +123,10 @@ public:
 	bool send(Packet& packet);
 	bool receive(Packet& packet);
 	
+
+	// --- Miscellaneous --- //
+	void setTiming(long long totalMs, long long shortMs = 0);
+
 	// --- DEBUG!!! --- //
 	std::string debug_PrintState();
 	void debug_connect(std::string address, uint16_t port);
@@ -146,8 +151,8 @@ private:
 	// --- Traffic data structures --- //
 
 	// Incoming packets	
-	random_access_queue<std::pair<Packet, bool>> recvQueue; // recieved valid packets are put here
-	std::condition_variable recvCondvar;	// notified when stuff is recieved
+	random_access_queue<std::pair<Packet, bool>> recvQueue; // received valid packets are put here
+	std::condition_variable recvCondvar;	// notified when stuff is received
 
 	// Incoming packet place reservation
 	struct ReservedInfo {
@@ -183,13 +188,13 @@ private:
 	// --- Miscallaneous --- //
 	std::mutex socketMutex; // lock whenever accessing data shared b/w main & IO thread
 	std::chrono::steady_clock::time_point timeLastSend; // the time of last packet send, including ACKs & KEPs
-	std::chrono::steady_clock::time_point timeLastRecieved;
+	std::chrono::steady_clock::time_point timeLastreceived;
 
 	bool isBlocking; // sets if calls block caller or return immediatly
 
 	// Well, remove this shit from here and make it configurable and tidy
-	static const unsigned TIMEOUT_TOTAL = 5000; // connection lost if no message for % ms
-	static const unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
+	unsigned TIMEOUT_TOTAL = 5000; // connection lost if no message for % ms
+	unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
 
 	// --- Internal helper functions --- //
 	bool sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures

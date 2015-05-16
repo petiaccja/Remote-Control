@@ -29,7 +29,7 @@ public:
 	
 
 	/// Get the sequence number of the packet.
-	/// Only valid for recieved and already sent packets. Otherwise numeric_limits<uint32_t>::max is returned.
+	/// Only valid for received and already sent packets. Otherwise numeric_limits<uint32_t>::max is returned.
 	uint32_t getSequenceNumber() const;
 
 	// Get a pointer to the packet's data.

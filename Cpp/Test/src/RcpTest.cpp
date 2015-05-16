@@ -35,8 +35,8 @@ public:
 	RcpTester::RcpHeader header;
 	RcpTester::RcpHeader send_header;
 
-	// Recieve stuff on the RcpTester
-	bool recieve() {
+	// receive stuff on the RcpTester
+	bool receive() {
 		for (int i = 0; i < 10; i++) {
 			if (tester.receive(packet, header)) {
 				return true;
@@ -45,10 +45,10 @@ public:
 		}
 		return false;
 	};
-	// Recieve a packet on tester and print it
-	bool PrintRecieve() {
+	// receive a packet on tester and print it
+	bool Printreceive() {
 		if (tester.receive(packet, header)) {
-			cout << "recieved: " << header.sequenceNumber << ", " << header.batchNumber << ", ";
+			cout << "received: " << header.sequenceNumber << ", " << header.batchNumber << ", ";
 			if (header.flags == 0) {
 				cout << "0" << endl;
 			}
@@ -124,27 +124,27 @@ public:
 		tester.send({ 0, 0, 0 }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 5, 4, 0 }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 6, 4, 0 }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 1, 1, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 3, 3, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		// resend reliable packet: duplication with reserved spaces
 		tester.send({ 3, 3, RcpTester::REL }, &++index, 4, "localhost", 5630);
@@ -156,30 +156,30 @@ public:
 		socket.receive(p);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 		// --
 		Sleep(100);
 
 		tester.send({ 2, 2, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 4, 4, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		// resend reliable packet: duplication without reserved spaces
 		tester.send({ 4, 4, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 
 		tester.send({ 4, 4, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		//while (PrintRecieve()) {}
+		//while (Printreceive()) {}
 		// --
 
 		tester.send({ 7, 7, RcpTester::REL }, &++index, 4, "localhost", 5630);
@@ -188,7 +188,7 @@ public:
 		PrintState();
 
 		socket.setBlocking(false);
-		cout << "Packets recieved by socket:" << endl;
+		cout << "Packets received by socket:" << endl;
 		while (socket.receive(p)) {
 			cout << p.getSequenceNumber() << " ";
 		}
@@ -220,12 +220,12 @@ public:
 		Sleep(100);
 		PrintState();
 
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		Sleep(1000);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		tester.send({ 0, 1, RcpTester::ACK }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 
 		this_thread::sleep_for(chrono::milliseconds(200));
@@ -247,19 +247,19 @@ public:
 		// send a packet to simulate some communication
 		tester.send({ 0, 0, RcpTester::REL }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// send a FIN
 		tester.send({ 0, 0, RcpTester::FIN }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// send ACK
 		tester.send({ 0, 0, RcpTester::ACK }, nullptr, 0, "localhost", 5630);
 
 		// print socket state
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 		socket.debug_kill();
 
@@ -273,12 +273,12 @@ public:
 		// send a packet to simulate some communication
 		tester.send({ 0, 0, RcpTester::REL }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// send a FIN
 		tester.send({ 0, 0, RcpTester::FIN }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// forget to send ack
 
@@ -289,7 +289,7 @@ public:
 		// wait until timeout and check socket state again
 		cout << "After 6000 ms" << endl;
 		Sleep(6000);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 		socket.debug_kill();
 
@@ -303,7 +303,7 @@ public:
 		// send a packet to simulate some communication
 		tester.send({ 0, 0, RcpTester::REL }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// print socket state
 		PrintState();
@@ -311,7 +311,7 @@ public:
 		// wait until timeout and check socket state again
 		Sleep(6000);
 		cout << "Not kept alive for 6000 ms:" << endl;
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 		socket.debug_kill();
 
@@ -327,19 +327,19 @@ public:
 		cout << "Disconnect initiated on socket:\n";
 		std::future<void> f1 = std::async([&] {socket.disconnect();});
 		Sleep(100);
-		PrintRecieve();
+		Printreceive();
 
 		Sleep(100);
 		tester.send({ 0, 0, RcpTester::FIN | RcpTester::ACK }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		cout << "FIN/ACK sent to socket:\n";
 		PrintState();
 
 		f1.wait();
 		cout << "Disconnect returned" << endl;
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 		socket.debug_kill();
 
@@ -354,11 +354,11 @@ public:
 		cout << "Disconnect initiated on socket:\n";
 		std::future<void> f2 = std::async([&] {socket.disconnect();});
 		Sleep(100);
-		PrintRecieve();
+		Printreceive();
 
 		f2.wait();
 		cout << "Disconnect returned" << endl;
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		PrintState();
 		socket.debug_kill();
 	}
@@ -379,7 +379,7 @@ public:
 		Sleep(100);
 		tester.send({ 1000, 10, RcpTester::SYN }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		tester.send({ 1001, 10, RcpTester::ACK }, nullptr, 0, "localhost", 5630);
 
 		f1.wait();
@@ -387,7 +387,7 @@ public:
 
 		socket.debug_kill();
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		// CONNECT FORGET ACK
 		cout << "--------------------------------------\n";
@@ -400,12 +400,12 @@ public:
 		Sleep(100);
 		tester.send({ 1000, 10, RcpTester::SYN }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		f2.wait();
 		PrintState();
 
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		socket.debug_kill();
 
 		// CONNECT FROM SOCKET NORMAL
@@ -417,15 +417,15 @@ public:
 		std::future<void> f3 = std::async([&] {socket.connect("localhost", 5631);});
 
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		tester.send({ 1000, 10, RcpTester::SYN | RcpTester::ACK }, nullptr, 0, "localhost", 5630);
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		f3.wait();
 		PrintState();
 
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		socket.debug_kill();
 
 		// CONNECT FROM SOCKET FORGET SYN/ACK
@@ -437,12 +437,12 @@ public:
 		std::future<void> f4 = std::async([&] {socket.connect("localhost", 5631);});
 
 		Sleep(100);
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 
 		f4.wait();
 		PrintState();
 
-		while (PrintRecieve()) {}
+		while (Printreceive()) {}
 		socket.debug_kill();
 	}
 

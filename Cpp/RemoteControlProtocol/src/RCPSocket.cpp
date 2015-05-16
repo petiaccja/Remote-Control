@@ -17,6 +17,7 @@ using namespace std::chrono; // long names were unreadable :(
 RcpSocket::RcpSocket() {
 	state = DISCONNECTED;
 	socket.setBlocking(false);
+	isBlocking = true;
 	localSeqNum = localBatchNum = 0;
 	remoteSeqNum = remoteBatchNum = 0;
 	remoteBatchNumReserved = remoteBatchNum;
@@ -107,6 +108,17 @@ uint16_t RcpSocket::getLocalPort() const {
 	return socket.getLocalPort(); 
 }
 
+void RcpSocket::setTiming(long long totalMs, long long shortMs) {
+	if (shortMs == 0) {
+		shortMs = TIMEOUT_SHORT;
+	}
+	if (totalMs < shortMs) {
+		totalMs = shortMs + 1;
+	}
+	TIMEOUT_TOTAL = totalMs;
+	TIMEOUT_SHORT = shortMs;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Connection setup
 
@@ -118,8 +130,8 @@ bool RcpSocket::accept() {
 	}
 
 	// set local parameters
-	localSeqNum = 15000;
-	localBatchNum = 500;
+	localSeqNum = 70000;
+	localBatchNum = 10000;
 
 	// do handshake
 	// - wait for SYN
@@ -140,7 +152,7 @@ bool RcpSocket::accept() {
 			continue;
 		}
 
-		// recieve packet
+		// receive packet
 		socket.receive(packet, remoteAddress, remotePort); // intentionally read into remoteWhatever
 
 		// decode header
@@ -334,7 +346,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	header = RcpHeader::deserialize(packet.getData(), 12);
 	debugPrintMsg(header, RECV);
 	if ((header.flags & (SYN | ACK)) < 2) {
-		cout << "syn-ack expected but not recieved" << endl;
+		cout << "syn-ack expected but not received" << endl;
 		return false;
 	}
 	*/
@@ -353,7 +365,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	debugPrintMsg(header, SEND); // DEBUG
 
 	// succesful connection
-	// note that the other party will drop connection soon if he did not recieve our last ACK
+	// note that the other party will drop connection soon if he did not receive our last ACK
 	// finalize connection states, fire up IO thread
 	timeLastSend = ::steady_clock::now();
 	state = CONNECTED;
@@ -400,7 +412,7 @@ void RcpSocket::disconnect() {
 			}
 		}
 
-		// try to recieve
+		// try to receive
 		if (!selector.wait(sf::microseconds(sleepTime.count()))) {
 			if (timedOut) {
 				// connection timed out: reset socket
@@ -457,9 +469,9 @@ void RcpSocket::disconnect() {
 			waitTotal += TIMEOUT_SHORT;
 		} while (waitTotal <= TIMEOUT_TOTAL && !selector.wait(sf::milliseconds(TIMEOUT_SHORT)));
 
-		// look what we recieved
+		// look what we received
 		if (sf::UdpSocket::Done != socket.receive(packet, responseAddress, responsePort)) {
-			// nothing recieved
+			// nothing received
 			break;
 		}
 		else if (responseAddress != remoteAddress || responsePort != remotePort || packet.getDataSize() < 12) {
@@ -467,7 +479,7 @@ void RcpSocket::disconnect() {
 			continue;
 		}
 		else {
-			// valid packet recieved
+			// valid packet received
 			header = RcpHeader::deserialize(packet.getData(), 12);
 			debugPrintMsg(header, RECV);
 			if (header.flags & (FIN | ACK)) {
@@ -488,6 +500,9 @@ void RcpSocket::disconnect() {
 	// set disconnected state
 	reset();
 	state = DISCONNECTED;
+
+	// interrupt pending receives
+	recvCondvar.notify_all();
 }
 
 
@@ -561,10 +576,10 @@ bool RcpSocket::receive(Packet& packet) {
 
 	// wait on condvar
 	bool isData = false;
-	auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId; };
+	auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId || state != CONNECTED; };
 	if (isBlocking) {
 		recvCondvar.wait(lk, IsDataPred);
-		if (cancelNotify == cancelCallId) {
+		if (cancelNotify == cancelCallId || state != CONNECTED) {
 			return false;
 		}
 		else {
@@ -617,6 +632,9 @@ void RcpSocket::startIoThread() {
 			state = DISCONNECTED;
 		}
 		runIoThread = false;
+
+		// interrupt pending receives
+		recvCondvar.notify_all();
 	});
 }
 
@@ -641,7 +659,7 @@ void RcpSocket::ioThreadFunction() {
 	//			- pump the incoming message to the queue
 	// 2.2. Act according to what event timed out 
 
-	timeLastRecieved = steady_clock::now();
+	timeLastreceived = steady_clock::now();
 
 	while (runIoThread) {
 		// ------------------------------------ //
@@ -722,9 +740,12 @@ void RcpSocket::ioThreadFunction() {
 			Packet packet;
 			bool isValid = decodeDatagram(rawPacket, sender, senderPort, header, packet);
 			debugPrintMsg(header, RECV);
+			if (!isValid) {
+				continue;
+			}
 
 			// set time of last valid packet
-			timeLastRecieved = steady_clock::now();
+			timeLastreceived = steady_clock::now();
 
 			// handle special packets
 			switch (header.flags) {
@@ -765,39 +786,6 @@ void RcpSocket::ioThreadFunction() {
 					continue;
 			}
 
-
-			/*
-			// reserve space(s) in queue if batch number references a packet that has not arrived yet
-			for (int i = 0; remoteBatchNumReserved <= header.batchNumber && i <= (ptrdiff_t)header.batchNumber - (ptrdiff_t)remoteBatchNum; i++) {
-				recvReserved.insert(ReservedMapT::value_type(remoteBatchNum + i, { recvQueue.size(), steady_clock::now() }));
-				recvQueue.push({ Packet(), false });
-				remoteBatchNumReserved++;
-			}
-
-			// set counters for remote host
-			remoteSeqNum = std::max(remoteSeqNum, packet.getSequenceNumber());
-			if (packet.isReliable()) {
-				remoteBatchNum = std::max(remoteBatchNum, header.batchNumber + 1);
-			}
-
-			// fill space if there's any reserved for this packet
-			ReservedMapT::iterator it;
-			if ((header.flags & REL) && (header.batchNumber <= remoteBatchNumReserved)) {
-				if ((it = recvReserved.find(header.batchNumber)) != recvReserved.end()) {
-					recvQueue[it->second.index].first = std::move(packet); // don't use this packet again; for performance reasons
-					recvQueue[it->second.index].second = true;
-					recvReserved.erase(it);
-				}
-				else {
-					continue;
-				}
-			}
-			// simply push packet to queue
-			else {
-				recvQueue.push({ packet, true });
-			}
-			//*/
-
 			// reserve spaces in queue if batch number references a late packet
 			long long numSpacesReserve = (long long)header.batchNumber - (long long)remoteBatchNumReserved;
 			for (long long i = 0; i < numSpacesReserve; ++i) {
@@ -817,7 +805,7 @@ void RcpSocket::ioThreadFunction() {
 					recvReserved.erase(it);
 				}
 				else {
-					cout << "duplicate";
+					cout << "duplicate: " << header << endl;;
 					continue;
 				}
 			}
@@ -836,6 +824,9 @@ void RcpSocket::ioThreadFunction() {
 		}
 	}
 }
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal helper functions
@@ -868,7 +859,7 @@ void RcpSocket::replyClose() {
 	bool isLastFinAcked = false;
 	long long waitTimeout = 0;
 	while (!isLastFinAcked && waitTimeout < TIMEOUT_TOTAL) {
-		// recieve a packet
+		// receive a packet
 		if (selector.wait(sf::milliseconds(TIMEOUT_SHORT))) {
 			socket.receive(packet, responseAddress, responsePort);
 
@@ -897,7 +888,7 @@ std::vector<uint8_t> RcpSocket::makePacket(const RcpHeader& header, const void* 
 	auto headerSer = header.serialize();
 	vector<uint8_t> v(size + headerSer.size());
 	memcpy(v.data(), headerSer.data(), headerSer.size());
-	memcpy(v.data() + headerSer.size(), headerSer.data(), size);
+	memcpy(v.data() + headerSer.size(), data, size);
 	return v;
 }
 
@@ -917,11 +908,21 @@ bool RcpSocket::decodeDatagram(const sf::Packet& packet, const sf::IpAddress& se
 	RcpHeader header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
 
 	// batch number and sequence number must be within a reasonable range
-	if (abs((ptrdiff_t)remoteBatchNum - (ptrdiff_t)header.batchNumber) > 1000) {
-		return false;
+	if (header.flags & ACK) {
+		if (abs((ptrdiff_t)localBatchNum - (ptrdiff_t)header.batchNumber) > 1000) {
+			return false;
+		}
+		if (abs((ptrdiff_t)localSeqNum - (ptrdiff_t)header.sequenceNumber) > 5000) {
+			return false;
+		}
 	}
-	if (abs((ptrdiff_t)remoteSeqNum - (ptrdiff_t)header.sequenceNumber) > 5000) {
-		return false;
+	else {
+		if (abs((ptrdiff_t)remoteBatchNum - (ptrdiff_t)header.batchNumber) > 1000) {
+			return false;
+		}
+		if (abs((ptrdiff_t)remoteSeqNum - (ptrdiff_t)header.sequenceNumber) > 5000) {
+			return false;
+		}
 	}
 
 	// all fine, get the data and form a packet
@@ -1004,7 +1005,7 @@ auto RcpSocket::getNextEvent(EventArgs& args) -> eClosestEventType {
 		eventType = KEEPALIVE;
 	}
 	// [5] Check total timeout
-	microseconds timeoutRemaining = duration_cast<microseconds>(timeLastRecieved + milliseconds(TIMEOUT_TOTAL) - now);
+	microseconds timeoutRemaining = duration_cast<microseconds>(timeLastreceived + milliseconds(TIMEOUT_TOTAL) - now);
 	if (eventRemaining > timeoutRemaining) {
 		eventRemaining = timeoutRemaining;
 		eventType = RECV_TIMEOUT;
@@ -1144,7 +1145,7 @@ void RcpSocket::debug_connect(std::string address, uint16_t port) {
 	remoteBatchNumReserved = remoteBatchNum;
 
 	// succesful connection
-	// note that the other party will drop connection soon if he did not recieve our last ACK
+	// note that the other party will drop connection soon if he did not receive our last ACK
 	// finalize connection states, fire up IO thread
 	timeLastSend = ::steady_clock::now();
 	state = CONNECTED;
@@ -1227,7 +1228,7 @@ void RcpSocket::debugPrintMsg(RcpHeader header, eDir dir) {
 
 		cout << "[" << setw(5) << getLocalPort() << "]   ";
 		if (dir == RECV) {
-			cout << "recieved   ";
+			cout << "received   ";
 		}
 		else {
 			cout << "sent       ";
@@ -1332,3 +1333,37 @@ state = CLOSING;
 return;
 }
 */
+
+
+
+/*
+// reserve space(s) in queue if batch number references a packet that has not arrived yet
+for (int i = 0; remoteBatchNumReserved <= header.batchNumber && i <= (ptrdiff_t)header.batchNumber - (ptrdiff_t)remoteBatchNum; i++) {
+recvReserved.insert(ReservedMapT::value_type(remoteBatchNum + i, { recvQueue.size(), steady_clock::now() }));
+recvQueue.push({ Packet(), false });
+remoteBatchNumReserved++;
+}
+
+// set counters for remote host
+remoteSeqNum = std::max(remoteSeqNum, packet.getSequenceNumber());
+if (packet.isReliable()) {
+remoteBatchNum = std::max(remoteBatchNum, header.batchNumber + 1);
+}
+
+// fill space if there's any reserved for this packet
+ReservedMapT::iterator it;
+if ((header.flags & REL) && (header.batchNumber <= remoteBatchNumReserved)) {
+if ((it = recvReserved.find(header.batchNumber)) != recvReserved.end()) {
+recvQueue[it->second.index].first = std::move(packet); // don't use this packet again; for performance reasons
+recvQueue[it->second.index].second = true;
+recvReserved.erase(it);
+}
+else {
+continue;
+}
+}
+// simply push packet to queue
+else {
+recvQueue.push({ packet, true });
+}
+//*/
