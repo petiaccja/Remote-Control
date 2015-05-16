@@ -144,8 +144,6 @@ bool RcpSocket::accept() {
 	uint16_t responsePort;
 
 	// - wait for SYN
-	// EZ ITT EL VAN BASZVA!
-	// LEHET MÁN JÓ
 	bool isData = false;
 	while (!isData) {
 		if (!selector.wait()) {
@@ -170,21 +168,6 @@ bool RcpSocket::accept() {
 			isData = true;
 		}
 	}
-	// DE IDÁIG KÉNE TARTANIA
-	/*
-	socket.receive(packet, remoteAddress, remotePort); // intentionally read into remoteWhatever
-	if (packet.getDataSize() < 12) {
-		cout << "not enough data" << endl;
-		return false;
-	}
-	header = RcpHeader::deserialize(packet.getData(), 12);
-	debugPrintMsg(header, RECV);
-	if (header.flags != SYN) {
-		cout << "not a SYN" << endl;
-		return false;
-	}
-	//*/
-	// KB. IDÁIG
 
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
@@ -232,24 +215,6 @@ bool RcpSocket::accept() {
 	if (!isAck) {
 		return false;
 	}
-
-	/*
-	if (!selector.wait(sf::milliseconds(TIMEOUT_TOTAL))) {
-		cout << "ack did not arrive" << endl;
-		return false;
-	}
-	socket.receive(packet, responseAddress, responsePort);
-	if (packet.getDataSize() < 12 || remoteAddress != responseAddress || remotePort != responsePort) {
-		cout << "not enough data, response from invalid address";
-		return false;
-	}
-	header = RcpHeader::deserialize(packet.getData(), packet.getDataSize());
-	debugPrintMsg(header, RECV);
-	if (header.flags != ACK || header.sequenceNumber != remoteSeqNum + 1 || header.batchNumber != remoteBatchNum) {
-		cout << "not ACK, seq or batch numbers not corresponding";
-		return false;
-	}
-	*/
 
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
@@ -333,24 +298,6 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 		return false;
 	}
 
-	/*
-	if (!selector.wait(sf::milliseconds(TIMEOUT_TOTAL))) {
-		cout << "request timed out" << endl;
-		return false;
-	}
-	socket.receive(packet, responseAddress, responsePort);
-	if (responseAddress != remoteAddress || responsePort != remotePort || packet.getDataSize() < 12) {
-		cout << "not remote host, wrong size" << endl;
-		return false;
-	}
-	header = RcpHeader::deserialize(packet.getData(), 12);
-	debugPrintMsg(header, RECV);
-	if ((header.flags & (SYN | ACK)) < 2) {
-		cout << "syn-ack expected but not received" << endl;
-		return false;
-	}
-	*/
-
 	remoteSeqNum = header.sequenceNumber;
 	remoteBatchNum = header.batchNumber;
 	remoteBatchNumReserved = remoteBatchNum;
@@ -389,6 +336,7 @@ void RcpSocket::disconnect() {
 	state = CLOSING;
 
 	// try to push pending reliable packets
+	// WARNING: this loop has not been tested, and is not expected to work!
 	while (recentPackets.size() > 0) {
 		// set to true if timeout is fatal
 		bool timedOut = false;
@@ -1296,74 +1244,3 @@ bool RcpTester::receive(Packet& packet, RcpHeader& header) {
 	}
 
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-// CODE GRAVEYARD
-
-/*
-ioThreadFunction, handling special packets -> changed to switch
-
-if (header.flags == KEP) {
-continue;
-}
-// recent packet was acknowledged: remove from waiting list
-else if (header.flags == ACK) {
-// remove the packet from the recent ack list
-auto it = recentPackets.find(header.batchNumber); // ack packets batch number contains the acknowledged packet's b.n.
-if (it != recentPackets.end()) {
-recentPackets.erase(it);
-}
-continue;
-}
-// got a reliable packet: send an ack
-else if (header.flags == REL) {
-// send an acknowledgement
-RcpHeader ackHeader;
-ackHeader.sequenceNumber = header.sequenceNumber;
-ackHeader.batchNumber = header.batchNumber;
-ackHeader.flags = ACK;
-auto ackData = RcpHeader::serialize(ackHeader);
-socket.send(ackData.data(), ackData.size(), remoteAddress, remotePort);
-debugPrintMsg(ackHeader, SEND);
-}
-// got a FIN signal
-else if (header.flags == FIN) {
-state = CLOSING;
-return;
-}
-*/
-
-
-
-/*
-// reserve space(s) in queue if batch number references a packet that has not arrived yet
-for (int i = 0; remoteBatchNumReserved <= header.batchNumber && i <= (ptrdiff_t)header.batchNumber - (ptrdiff_t)remoteBatchNum; i++) {
-recvReserved.insert(ReservedMapT::value_type(remoteBatchNum + i, { recvQueue.size(), steady_clock::now() }));
-recvQueue.push({ Packet(), false });
-remoteBatchNumReserved++;
-}
-
-// set counters for remote host
-remoteSeqNum = std::max(remoteSeqNum, packet.getSequenceNumber());
-if (packet.isReliable()) {
-remoteBatchNum = std::max(remoteBatchNum, header.batchNumber + 1);
-}
-
-// fill space if there's any reserved for this packet
-ReservedMapT::iterator it;
-if ((header.flags & REL) && (header.batchNumber <= remoteBatchNumReserved)) {
-if ((it = recvReserved.find(header.batchNumber)) != recvReserved.end()) {
-recvQueue[it->second.index].first = std::move(packet); // don't use this packet again; for performance reasons
-recvQueue[it->second.index].second = true;
-recvReserved.erase(it);
-}
-else {
-continue;
-}
-}
-// simply push packet to queue
-else {
-recvQueue.push({ packet, true });
-}
-//*/

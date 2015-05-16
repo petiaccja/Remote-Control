@@ -16,6 +16,9 @@
 using namespace std;
 using namespace std::chrono;
 
+// Warning:
+// This file is a little messed up as it servers only for testing.
+
 // Tests included:
 // - Latency test: 
 //		Attempts to compute average latency.
@@ -76,7 +79,6 @@ vector<string> Tokenize(string str, char delim = ' ') {
 
 
 void Latency(size_t numPackets, nanoseconds interval, size_t packetSize);
-void Loss(size_t numPackets, nanoseconds interval, size_t packetSize);
 void Bandwidth(size_t numPackets, nanoseconds interval, size_t packetSize);
 
 
@@ -269,7 +271,7 @@ int RcpBenchmark() {
 
 			cout << "set <parameter> <value> - set common parameters of testing\n";
 			cout << "    Parameter can be one of the following:\n";
-			cout << "    number - the number of packets to use for a single test\n";
+			cout << "    number / count - the number of packets to use for a single test\n";
 			cout << "             0 means until you interrupt manually\n";
 			cout << "    interval - interval between packets during tests, milliseconds\n";
 			cout << "    size - the size of each packet used for tests, byte\n";
@@ -279,7 +281,7 @@ int RcpBenchmark() {
 			Latency(numPackets, interval, packetSize);
 		}
 		else if (command == "loss") {
-			Loss(numPackets, interval, packetSize);
+			cout << "Launch a latency test -- it has been merged with packet loss test, and reports loss as well." << endl;
 		}
 		else if (command == "bandwidth") {
 			Bandwidth(numPackets, interval, packetSize);
@@ -416,7 +418,7 @@ int RcpBenchmark() {
 			}
 			string parameter = tokens[1];
 			int value = atoi(tokens[2].c_str());
-			if (parameter == "number") {
+			if (parameter == "number" || parameter == "count") {
 				if (value == 0) {
 					cout << "This parameter cannot be 0!" << endl;
 					continue;
@@ -593,10 +595,6 @@ void Latency(size_t numPackets, nanoseconds interval, size_t packetSize) {
 }
 
 
-void Loss(size_t numPackets, nanoseconds interval, size_t packetSize) {
-	cout << "Testing packet loss...\n";
-}
-
 void Bandwidth(size_t numPackets, nanoseconds interval, size_t packetSize) {
 	cout << "Testing bandwidth...\n";
 
@@ -647,7 +645,7 @@ void Bandwidth(size_t numPackets, nanoseconds interval, size_t packetSize) {
 	flag = true;
 	DecodeMessage(packet, decmsg);
 	if (decmsg.msg != eMessageType::CONTROL || decmsg.param1 != eMessageParam::SUCCESS) {
-		cout << "Bitch did not accept the request." << endl;
+		cout << "Remote peer did not accept the request." << endl;
 		return;
 	}
 

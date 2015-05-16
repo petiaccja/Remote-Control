@@ -19,6 +19,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // How it works.
+//	TODO: update this short description and make protocol specifications
 //
 //	*Threads*
 //	There are 2 threads.
@@ -96,7 +97,10 @@ public:
 
 	// --- Custructors & Destructor --- //
 	RcpSocket();
+	RcpSocket(const RcpSocket&) = delete;
 	~RcpSocket();
+
+	RcpSocket& operator=(const RcpSocket&) = delete;
 
 	// --- Modifiers --- //
 	// binding
