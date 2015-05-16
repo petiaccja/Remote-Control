@@ -8,6 +8,7 @@ FILE(GLOB_RECURSE headers src/*.h*)
 
 # Project
 add_executable(Server ${sources} ${headers})
+set_property(TARGET Server PROPERTY CXX_STANDARD 11)
 
 # Dependencies
 target_link_libraries(Server RemoteControlProtocol)

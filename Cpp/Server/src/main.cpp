@@ -5,7 +5,7 @@
 #include <conio.h>
 #else 
 char _getch() {
-	return cin.get();
+	return std::cin.get();
 }
 #endif
 

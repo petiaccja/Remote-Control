@@ -9,6 +9,7 @@
 #include <future>
 #include <cassert>
 #include <csignal>
+#include <cstring>
 
 #include "../../RemoteControlProtocol/src/Packet.h"
 #include "../../RemoteControlProtocol/src/RcpSocket.h"
@@ -98,16 +99,17 @@ void CancelSlave(int sgn) {
 
 
 // serialization is for pussies
-union Message {
+struct Message {
 	static const int HeaderSize = sizeof(eMessageType) + sizeof(eMessageParam) + sizeof(uint32_t);
-	struct {
-		eMessageType msg;
-		eMessageParam param1;
-		uint32_t param2;
-		char data[RcpSocket::MaxDatagramSize - HeaderSize];
+	union {
+		struct {
+			eMessageType msg;
+			eMessageParam param1;
+			uint32_t param2;
+			char data[RcpSocket::MaxDatagramSize - HeaderSize];
+		};
+		char raw[RcpSocket::MaxDatagramSize];
 	};
-	char raw[RcpSocket::MaxDatagramSize];
-
 };
 Message m;
 bool DecodeMessage(const Packet& packet, Message& msg) {

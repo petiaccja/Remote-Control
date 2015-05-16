@@ -8,6 +8,11 @@ FILE(GLOB_RECURSE headers src/*.h*)
 
 # Project
 add_executable(Test ${sources} ${headers})
+set_property(TARGET Test PROPERTY CXX_STANDARD 11)
 
 # Dependencies
-target_link_libraries(Test RemoteControlProtocol)
+if (COMPILER STREQUAL gcc)
+	set(ADDITIONAL_LINKS pthread)
+endif()
+
+target_link_libraries(Test RemoteControlProtocol ${ADDITIONAL_LINKS})

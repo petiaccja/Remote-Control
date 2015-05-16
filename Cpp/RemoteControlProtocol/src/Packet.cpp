@@ -38,7 +38,7 @@ Packet::~Packet() {
 
 
 Packet& Packet::operator=(const Packet& other) {
-	Packet::~Packet();
+	this->~Packet();
 	new (this) Packet(other);
 	return *this;
 }
