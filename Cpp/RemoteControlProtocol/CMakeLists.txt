@@ -21,7 +21,16 @@ elseif (${COMPILER} STREQUAL "gcc")
 	set(ADDITIONAL_LINKS "pthread")
 endif()
 
-target_link_libraries(RemoteControlProtocol sfml-network-s-d sfml-system-s-d ${ADDITIONAL_LINKS})
+if (CMAKE_C_FLAGS_DEBUG)
+	set(LINKS sfml-network-s-d sfml-system-s-d)
+	message(debug)
+else ()
+	message(release)
+	set(LINKS sfml-network-s sfml-system-s)
+endif()
+
+
+target_link_libraries(RemoteControlProtocol ${LINKS} ${ADDITIONAL_LINKS})
 
 
 

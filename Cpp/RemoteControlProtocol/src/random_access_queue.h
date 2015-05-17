@@ -10,9 +10,9 @@ private:
 	using queue_type = std::queue < T, std::deque<T> > ;
 public:
 	// constructors
-	explicit random_access_queue(const typename queue_type::container_type& cont) : queue_type(cont) {};
+	explicit random_access_queue(const typename std::deque<T>& cont) : queue_type(cont) {};
 
-	explicit random_access_queue(typename queue_type::container_type&& cont = queue_type::container_type()) : queue_type(cont) {};
+	explicit random_access_queue(typename std::deque<T>&& cont = std::deque<T>()) : queue_type(cont) {};
 
 	random_access_queue(const random_access_queue& other) : queue_type(other) {};
 
@@ -22,10 +22,10 @@ public:
 	explicit random_access_queue(const Alloc& alloc) : queue_type(alloc) {};
 
 	template< class Alloc >
-	random_access_queue(const typename queue_type::container_type& cont, const Alloc& alloc) : queue_type(cont, alloc) {};
+	random_access_queue(const typename std::deque<T>& cont, const Alloc& alloc) : queue_type(cont, alloc) {};
 
 	template< class Alloc >
-	random_access_queue(typename queue_type::container_type&& cont, const Alloc& alloc) : queue_type(cont, alloc) {};
+	random_access_queue(typename std::deque<T>&& cont, const Alloc& alloc) : queue_type(cont, alloc) {};
 
 	template< class Alloc >
 	random_access_queue(const random_access_queue& other, const Alloc& alloc) : queue_type(other, alloc) {};
