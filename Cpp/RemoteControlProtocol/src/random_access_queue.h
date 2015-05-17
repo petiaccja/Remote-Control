@@ -12,7 +12,7 @@ public:
 	// constructors
 	explicit random_access_queue(const typename queue_type::container_type& cont) : queue_type(cont) {};
 
-	explicit random_access_queue(typename queue_type::container_type&& cont = typename queue_type::container_type()) : queue_type(cont) {};
+	explicit random_access_queue(typename queue_type::container_type&& cont = queue_type::container_type()) : queue_type(cont) {};
 
 	random_access_queue(const random_access_queue& other) : queue_type(other) {};
 

@@ -16,7 +16,7 @@ add_definitions(-DSFML_STATIC)
 
 # Dependencies
 if (WINDOWS_BUILD)
-	set(ADDITIONAL_LINKS "sndfile freetype glew jpeg openal32 ws2_32")
+	set(ADDITIONAL_LINKS "ws2_32")
 elseif (${COMPILER} STREQUAL "gcc")
 	set(ADDITIONAL_LINKS "pthread")
 endif()
