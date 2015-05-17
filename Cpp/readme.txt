@@ -1,0 +1,1 @@
+Az értelmes kód a RemoteControlProtocolban van, a Test-ben pedig egy nem annyira értelmes teszt kód van. A Test-et kell futtatni, a többi vagy static lib, vagy nem csinál semmit.
