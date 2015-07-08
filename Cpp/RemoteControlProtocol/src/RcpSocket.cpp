@@ -464,7 +464,7 @@ bool RcpSocket::send(const void * data, size_t size, bool reliable) {
 	return sendEx(data, size, reliable ? (uint32_t)REL : 0);
 }
 
-bool RcpSocket::send(Packet& packet) {
+bool RcpSocket::send(RcpPacket& packet) {
 	return send(packet.getData(), packet.getDataSize(), packet.isReliable());
 }
 
@@ -511,7 +511,7 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 }
 
 
-bool RcpSocket::receive(Packet& packet) {
+bool RcpSocket::receive(RcpPacket& packet) {
 	cancelCallId++;
 
 	// check errors
@@ -687,7 +687,7 @@ void RcpSocket::ioThreadFunction() {
 
 			// extract rcp header and payload from packet
 			RcpHeader header;
-			Packet packet;
+			RcpPacket packet;
 			bool isValid = decodeDatagram(rawPacket, sender, senderPort, header, packet);
 			debugPrintMsg(header, RECV);
 			if (!isValid) {
@@ -741,7 +741,7 @@ void RcpSocket::ioThreadFunction() {
 			for (long long i = 0; i < numSpacesReserve; ++i) {
 				remoteBatchNumReserved++;
 				recvReserved.insert({ remoteBatchNumReserved,{ recvQueue.size(), steady_clock::now() } });
-				recvQueue.push({ Packet(), false });
+				recvQueue.push({ RcpPacket(), false });
 			}
 
 			// fill space if there's one reserved for this packet
@@ -844,7 +844,7 @@ std::vector<uint8_t> RcpSocket::makePacket(const RcpHeader& header, const void* 
 
 
 
-bool RcpSocket::decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, Packet& rcpPacket) {
+bool RcpSocket::decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, RcpPacket& rcpPacket) {
 	// size must be at least 12 to contain the RCP header
 	if (packet.getDataSize() < 12) {
 		return false;
@@ -876,7 +876,7 @@ bool RcpSocket::decodeDatagram(const sf::Packet& packet, const sf::IpAddress& se
 	}
 
 	// all fine, get the data and form a packet
-	Packet tmp;
+	RcpPacket tmp;
 	tmp.setData((char*)packet.getData() + 12, packet.getDataSize() - 12);
 	tmp.sequenceNumber = header.sequenceNumber;
 	tmp.reliable = (header.flags & REL) != 0;
@@ -1224,7 +1224,7 @@ bool RcpTester::send(RcpHeader header, void* data, size_t dataSize, std::string 
 	return socket.send(rawData, dataSize + 12, address, port) == sf::UdpSocket::Done;
 }
 
-bool RcpTester::receive(Packet& packet, RcpHeader& header) {
+bool RcpTester::receive(RcpPacket& packet, RcpHeader& header) {
 	sf::Packet sfp;
 	sf::IpAddress remoteAddress;
 	uint16_t remotePort;

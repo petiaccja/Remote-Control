@@ -6,7 +6,7 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-#include "../../RemoteControlProtocol/src/Packet.h"
+#include "../../RemoteControlProtocol/src/RcpPacket.h"
 #include "../../RemoteControlProtocol/src/RcpSocket.h"
 #include <future>
 #include <SFML/Network.hpp>
@@ -31,7 +31,7 @@ public:
 	// variables
 	RcpSocket socket;
 	RcpTester tester;
-	Packet packet;
+	RcpPacket packet;
 	RcpTester::RcpHeader header;
 	RcpTester::RcpHeader send_header;
 
@@ -150,7 +150,7 @@ public:
 		tester.send({ 3, 3, RcpTester::REL }, &++index, 4, "localhost", 5630);
 		Sleep(100);
 		PrintState();
-		Packet p;
+		RcpPacket p;
 		cout << "-----------------------------\n";
 		socket.receive(p);
 		socket.receive(p);
@@ -206,7 +206,7 @@ public:
 
 		socket.debug_connect("localhost", 5631);
 
-		Packet p;
+		RcpPacket p;
 
 		PrintState();
 
@@ -535,7 +535,7 @@ void CommunicationTest() {
 		}
 		sock1.setBlocking(false);
 
-		Packet packet;
+		RcpPacket packet;
 		char data[64] = { 0 };
 		packet.setReliable(false);
 
@@ -556,7 +556,7 @@ void CommunicationTest() {
 			sock1.send(packet);
 
 			// recv all msg
-			Packet recp;
+			RcpPacket recp;
 			while (sock1.receive(recp)) {
 				lock_guard<mutex> lk(ioMutex);
 				//cout << sock1.getLocalPort() << ": " << (const char*)recp.getData() << endl;
@@ -581,7 +581,7 @@ void CommunicationTest() {
 		}
 		sock2.setBlocking(false);
 
-		Packet packet;
+		RcpPacket packet;
 		char data[64] = { 0 };
 		packet.setReliable(false);
 
@@ -596,7 +596,7 @@ void CommunicationTest() {
 			sock2.send(packet);
 
 			// recv all msg
-			Packet recp;
+			RcpPacket recp;
 			while (sock2.receive(recp)) {
 				lock_guard<mutex> lk(ioMutex);
 				//cout << sock2.getLocalPort() << ": " << (const char*)recp.getData() << endl;

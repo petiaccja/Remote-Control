@@ -14,7 +14,7 @@
 
 #include <SFML/Network.hpp>
 
-#include "Packet.h"
+#include "RcpPacket.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -103,29 +103,65 @@ public:
 	RcpSocket& operator=(const RcpSocket&) = delete;
 
 	// --- Modifiers --- //
+
 	// binding
+	/// Bind socket.
+	/// \param port The port to bind the socket to.
+	/// \return True if binding was successful, false otherwise.
 	bool bind(uint16_t port);
+
+	/// Unbind socket.
 	void unbind();
+
+	/// Check if the socket is bound.
+	/// \return True if bound.
 	bool isBound() const;
+
 	// connection
+	/// Check if the socket is connected.
 	bool isConnected() const;
+	/// Get IP address of remote peer.
 	std::string getRemoteAddress() const;
+	/// Get port used on remote peer.
 	uint16_t getRemotePort() const;
+	/// Get locally used port.
 	uint16_t getLocalPort() const;
+
 	// blocking, cancel
+	/// Set whether certain operations block calling thread.
+	/// Affects only receive, other operation can be cancelled.
 	void setBlocking(bool isBlocking);
+	/// Get current blocking mode.
 	bool getBlocking() const;
+	/// Cancels pending blocking operations.
+	/// Can be callled from any thread.
 	void cancel();
 
 	// --- Connection setup --- //
+	/// Wait for an incoming connection request.
+	/// \return True if the connection was successfully established, false if an error occured.
 	bool accept();
+	/// Initiate connection to remote peer.
+	/// \return True is the connection was successfully established, false if an error occured.
 	bool connect(std::string address, uint16_t port);
+	/// Close current connection.
 	void disconnect();
 
 	// --- Traffic --- //
+	/// Send raw packet over network.
+	/// \param data The content of the packet.
+	/// \param size The size of data in bytes.
+	/// \param reliable Whether the packet's reliable.
+	/// \return Returns if the operation was succesful.
 	bool send(const void* data, size_t size, bool reliable);
-	bool send(Packet& packet);
-	bool receive(Packet& packet);
+	/// Send packet over network.
+	/// \param packet The packet to send.
+	/// \return Returns if the operation was succesful.
+	bool send(RcpPacket& packet);
+	/// Receive a packet.
+	/// \param packet This will hold the received packet.
+	/// \return Return true if succesfully received, false on error or if no packet was ready.
+	bool receive(RcpPacket& packet);
 	
 
 	// --- Miscellaneous --- //
@@ -155,7 +191,7 @@ private:
 	// --- Traffic data structures --- //
 
 	// Incoming packets	
-	random_access_queue<std::pair<Packet, bool>> recvQueue; // received valid packets are put here
+	random_access_queue<std::pair<RcpPacket, bool>> recvQueue; // received valid packets are put here
 	std::condition_variable recvCondvar;	// notified when stuff is received
 
 	// Incoming packet place reservation
@@ -205,7 +241,7 @@ private:
 	void reset(); // clean up data structures after a session
 	void replyClose(); // perform closing procedure after getting a FIN
 	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);
-	bool decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, Packet& rcpPacket);
+	bool decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, RcpPacket& rcpPacket);
 	eClosestEventType getNextEvent(EventArgs& args);
 
 	// --- Cancellation --- //
@@ -248,7 +284,7 @@ public:
 
 	bool bind(uint16_t localPort);
 	bool send(RcpHeader header, void* data, size_t dataSize, std::string address, uint32_t port);
-	bool receive(Packet& packet, RcpHeader& header);
+	bool receive(RcpPacket& packet, RcpHeader& header);
 private:
 	sf::UdpSocket socket;
 };

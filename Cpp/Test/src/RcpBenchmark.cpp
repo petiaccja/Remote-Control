@@ -11,7 +11,7 @@
 #include <csignal>
 #include <cstring>
 
-#include "../../RemoteControlProtocol/src/Packet.h"
+#include "../../RemoteControlProtocol/src/RcpPacket.h"
 #include "../../RemoteControlProtocol/src/RcpSocket.h"
 
 using namespace std;
@@ -112,7 +112,7 @@ struct Message {
 	};
 };
 Message m;
-bool DecodeMessage(const Packet& packet, Message& msg) {
+bool DecodeMessage(const RcpPacket& packet, Message& msg) {
 	if (packet.getDataSize() < Message::HeaderSize) {
 		return false;
 	}
@@ -125,8 +125,8 @@ bool DecodeMessage(const Packet& packet, Message& msg) {
 
 
 void BackgroundThreadFunc() {
-	Packet recvPacket;
-	Packet sendPacket;
+	RcpPacket recvPacket;
+	RcpPacket sendPacket;
 	Message msg;
 	size_t bytesRecieved;
 
@@ -467,7 +467,7 @@ void Latency(size_t numPackets, nanoseconds interval, size_t packetSize) {
 	cout << "Testing latency...\n";
 	Message msg;
 	Message decmsg;
-	Packet packet;
+	RcpPacket packet;
 	bool flag;
 
 	if (numPackets == 0) {
@@ -526,7 +526,7 @@ void Latency(size_t numPackets, nanoseconds interval, size_t packetSize) {
 	socket.setBlocking(false);
 	volatile bool run = true;
 	thread receiveThread([&] {
-		Packet p;
+		RcpPacket p;
 		Message m;
 		while (run) {
 			if (socket.receive(p) && DecodeMessage(p, m)) {
@@ -602,7 +602,7 @@ void Bandwidth(size_t numPackets, nanoseconds interval, size_t packetSize) {
 
 	Message msg;
 	Message decmsg;
-	Packet packet;
+	RcpPacket packet;
 	bool flag;
 
 	if (numPackets == 0) {
