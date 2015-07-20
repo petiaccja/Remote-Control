@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <cassert>
 #include <cstring>
+
+// needed for colored console text while debugging
 #ifdef _MSC_VER
 #include <Windows.h>
 #endif
@@ -124,11 +126,14 @@ void RcpSocket::setTiming(long long totalMs, long long shortMs) {
 ////////////////////////////////////////////////////////////////////////////////
 // Connection setup
 
-bool RcpSocket::accept() {
+void RcpSocket::accept() {
 	cancelCallId++;
 
-	if (state != DISCONNECTED || !isBound()) {
-		return false;
+	if (state != DISCONNECTED) {
+		throw RcpInvalidCallException("already connected");
+	} 
+	if (!isBound()) {
+		throw RcpInvalidCallException("must bind the socket first");
 	}
 
 	// set local parameters
@@ -164,7 +169,7 @@ bool RcpSocket::accept() {
 
 		// react to header
 		if (header.flags == CANCEL && cancelCallId == header.sequenceNumber) {
-			return false;
+			throw RcpInterruptedException("function call was cancelled");
 		}
 		else if (header.flags == SYN) {
 			isData = true;
@@ -193,7 +198,7 @@ bool RcpSocket::accept() {
 
 		// wait for a packet
 		if (!selector.wait(sf::milliseconds(timeLeft))) {
-			return false;
+			throw RcpNetworkException("client's response timed out");
 		}
 		socket.receive(packet, responseAddress, responsePort);
 
@@ -206,7 +211,7 @@ bool RcpSocket::accept() {
 
 		// react to packet
 		if (header.flags == CANCEL && header.sequenceNumber == cancelCallId) {
-			return false;
+			throw RcpInterruptedException("function call was cancelled");
 		}
 		else if (header.flags == ACK && header.sequenceNumber == remoteSeqNum + 1 && header.batchNumber == remoteBatchNum) {
 			isAck = true;
@@ -215,7 +220,7 @@ bool RcpSocket::accept() {
 	} while (timeLeft > 0);
 
 	if (!isAck) {
-		return false;
+		throw RcpNetworkException("ACK was expected, received other packet");
 	}
 
 	remoteSeqNum = header.sequenceNumber;
@@ -227,15 +232,16 @@ bool RcpSocket::accept() {
 	timeLastSend = ::steady_clock::now();
 	state = CONNECTED;
 	startIoThread();
-
-	return true;
 }
 
-bool RcpSocket::connect(std::string address, uint16_t port) {
+void RcpSocket::connect(std::string address, uint16_t port) {
 	cancelCallId++;
 
-	if (state != DISCONNECTED || !isBound()) {
-		return false;
+	if (state != DISCONNECTED) {
+		throw RcpInvalidCallException("already connected");
+	}
+	if (!isBound()) {
+		throw RcpInvalidCallException("must bind the socket first");
 	}
 
 	// set remote parameters
@@ -275,7 +281,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 
 		// wait for a packet
 		if (!selector.wait(sf::milliseconds(timeLeft))) {
-			return false;
+			throw RcpNetworkException("client's response timed out");
 		}
 		socket.receive(packet, responseAddress, responsePort);
 
@@ -288,7 +294,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 
 		// react to packet
 		if (header.flags == CANCEL && header.sequenceNumber == cancelCallId) {
-			return false;
+			throw RcpInterruptedException("function call was cancelled");
 		}
 		else if (header.flags == (SYN | ACK)) {
 			isSynAck = true;
@@ -297,7 +303,7 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	} while (timeLeft > 0);
 
 	if (!isSynAck) {
-		return false;
+		throw RcpNetworkException("SYN/ACK was expected, received other packet");
 	}
 
 	remoteSeqNum = header.sequenceNumber;
@@ -319,8 +325,6 @@ bool RcpSocket::connect(std::string address, uint16_t port) {
 	timeLastSend = ::steady_clock::now();
 	state = CONNECTED;
 	startIoThread();
-
-	return true;
 }
 
 
@@ -460,19 +464,19 @@ void RcpSocket::disconnect() {
 ////////////////////////////////////////////////////////////////////////////////
 // Traffic
 
-bool RcpSocket::send(const void * data, size_t size, bool reliable) {
+void RcpSocket::send(const void * data, size_t size, bool reliable) {
 	return sendEx(data, size, reliable ? (uint32_t)REL : 0);
 }
 
-bool RcpSocket::send(RcpPacket& packet) {
+void RcpSocket::send(RcpPacket& packet) {
 	return send(packet.getData(), packet.getDataSize(), packet.isReliable());
 }
 
 // data does NOT include header
-bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
+void RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 	// check errors
 	if (state != CONNECTED) {
-		return false;
+		throw RcpInvalidCallException("socket must be connected to send");
 	}
 	// create socket header + data block
 	RcpHeader header;
@@ -492,7 +496,7 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 	auto sfStatus = socket.send(rawData.data(), rawData.size(), remoteAddress, remotePort);
 	debugPrintMsg(header, SEND); // DEBUG
 	if (sfStatus != sf::Socket::Done) {
-		return false;
+		throw RcpInvalidArgumentException("packet could not be sent, might be to big");
 	}
 
 	// add packet to list of ack waiting packets
@@ -506,8 +510,6 @@ bool RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 
 	// set last sending time to manage timeouts
 	timeLastSend = steady_clock::now();
-
-	return true;
 }
 
 
@@ -516,7 +518,7 @@ bool RcpSocket::receive(RcpPacket& packet) {
 
 	// check errors
 	if (state != CONNECTED) {
-		return false;
+		throw RcpInvalidCallException("socket must be connected to receive");
 	}
 
 	// wait for packet queue to have data
@@ -530,7 +532,7 @@ bool RcpSocket::receive(RcpPacket& packet) {
 	if (isBlocking) {
 		recvCondvar.wait(lk, IsDataPred);
 		if (cancelNotify == cancelCallId || state != CONNECTED) {
-			return false;
+			throw RcpInterruptedException("function call was cancelled or connection was closed");
 		}
 		else {
 			isData = true;

@@ -15,6 +15,7 @@
 #include <SFML/Network.hpp>
 
 #include "RcpPacket.h"
+#include "Exception.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -105,6 +106,7 @@ public:
 	// --- Modifiers --- //
 
 	// binding
+
 	/// Bind socket.
 	/// \param port The port to bind the socket to.
 	/// \return True if binding was successful, false otherwise.
@@ -118,32 +120,45 @@ public:
 	bool isBound() const;
 
 	// connection
+
 	/// Check if the socket is connected.
 	bool isConnected() const;
+
 	/// Get IP address of remote peer.
 	std::string getRemoteAddress() const;
+
 	/// Get port used on remote peer.
 	uint16_t getRemotePort() const;
+
 	/// Get locally used port.
 	uint16_t getLocalPort() const;
 
 	// blocking, cancel
+
 	/// Set whether certain operations block calling thread.
 	/// Affects only receive, other operation can be cancelled.
 	void setBlocking(bool isBlocking);
+
 	/// Get current blocking mode.
 	bool getBlocking() const;
+
 	/// Cancels pending blocking operations.
 	/// Can be callled from any thread.
 	void cancel();
 
 	// --- Connection setup --- //
 	/// Wait for an incoming connection request.
-	/// \return True if the connection was successfully established, false if an error occured.
-	bool accept();
+	/// \throws RcpInvalidCallException The current state of the socket does not allow calling accept().
+	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
+	/// \throws RcpNetworkException Internal network or protocol problem happened.
+	void accept();
+
 	/// Initiate connection to remote peer.
-	/// \return True is the connection was successfully established, false if an error occured.
-	bool connect(std::string address, uint16_t port);
+	/// \throws RcpInvalidCallException The current state of the socket does not allow calling accept().
+	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
+	/// \throws RcpNetworkException Internal network or protocol problem happened.
+	void connect(std::string address, uint16_t port);
+
 	/// Close current connection.
 	void disconnect();
 
@@ -152,15 +167,21 @@ public:
 	/// \param data The content of the packet.
 	/// \param size The size of data in bytes.
 	/// \param reliable Whether the packet's reliable.
-	/// \return Returns if the operation was succesful.
-	bool send(const void* data, size_t size, bool reliable);
+	/// \throws RcpInvalidCallException Cannot call send() in the current state of the socket.
+	/// \throws RcpInvalidArgumentException Could not send the packet over the network, it may have been too large.
+	void send(const void* data, size_t size, bool reliable);
+
 	/// Send packet over network.
 	/// \param packet The packet to send.
-	/// \return Returns if the operation was succesful.
-	bool send(RcpPacket& packet);
+	/// \throws RcpInvalidCallException Cannot call send() in the current state of the socket.
+	/// \throws RcpInvalidArgumentException Could not send the packet over the network, it may have been too large.
+	void send(RcpPacket& packet);
+
 	/// Receive a packet.
 	/// \param packet This will hold the received packet.
-	/// \return Return true if succesfully received, false on error or if no packet was ready.
+	/// \return Return true if succesfully received, false if no packet was ready.
+	/// \throws RcpInvalidCallException The current state of the socket does not allow receiving packets.
+	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
 	bool receive(RcpPacket& packet);
 	
 
@@ -237,7 +258,7 @@ private:
 	unsigned TIMEOUT_SHORT = 200; // resend packet, resend kep, granularity of longer operations
 
 	// --- Internal helper functions --- //
-	bool sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures
+	void sendEx(const void* data, size_t size, uint32_t flags); // send message with management of internal structures
 	void reset(); // clean up data structures after a session
 	void replyClose(); // perform closing procedure after getting a FIN
 	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);

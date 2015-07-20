@@ -25,8 +25,8 @@ class ChannelManagerBase {
 
 	/// Helper structure to store a channel->provider:port mapping record.
 	struct ChannelMapping {
-		ChannelMapping() = default;
-		ChannelMapping(int channel) : channel(channel), provider(nullptr), port(0) {}
+		ChannelMapping(int channel = -1, ProviderT* provider = nullptr, int port = 0) 
+			: channel(channel), provider(provider), port(port) {}
 		int channel;
 		ProviderT* provider;
 		int port;
@@ -35,14 +35,16 @@ class ChannelManagerBase {
 	};
 public:
 	/// Iterator over registered hardware providers.
-	class ProviderIterator : std::map<ProviderT*, int>::const_iterator {
+	class ProviderIterator : public std::map<ProviderT*, int>::const_iterator {
 	public:
-		using std::map<ProviderT*, int>::iterator::iterator;
+		using std::map<ProviderT*, int>::const_iterator::const_iterator;
+		ProviderIterator(typename std::map<ProviderT*, int>::const_iterator it) : 
+			std::map<ProviderT*, int>::const_iterator(it) {}
 		ProviderT* operator*() { 
-			return std::map<ProviderT*, int>::iterator::operator->()->first;
+			return std::map<ProviderT*, int>::const_iterator::operator->()->first;
 		}
-		ProviderT** operator*() {
-			return &(std::map<ProviderT*, int>::iterator::operator->()->first);
+		ProviderT** operator->() {
+			return &(std::map<ProviderT*, int>::const_iterator::operator->()->first);
 		}
 	};
 	/// Iterator over each channel of each provider.
@@ -62,6 +64,9 @@ public:
 	/// Get the number of providers currently registered.
 	/// \return Number of providers currently registered.
 	size_t GetNumProviders() const;
+	/// Get the number of channels.
+	/// \return The number of channels.
+	size_t GetNumChannels() const;
 	/// Get iterator to the first provider.
 	ProviderIterator ProviderBegin() const;
 	/// Get iterator to the provider past the last provider.
@@ -93,10 +98,10 @@ bool ChannelManagerBase<ProviderT>::AddProvider(ProviderT* provider, int startCh
 
 	// set channel mappings
 	for (int i = 0; i < numPorts; i++) {
-		auto insresc = channelMappings.insert({ startChannel + i, provider, i});
+		auto insresc = channelMappings.insert({ startChannel + i, provider, i });
 		if (!insresc.second) { // error: channel already taken
 			// perform a rollback and break the loop
-			for (int j = i; j >= 0; j--) {
+			for (int j = i-1; j >= 0; j--) {
 				channelMappings.erase(startChannel + j);
 			}
 			return false;
@@ -135,6 +140,10 @@ size_t ChannelManagerBase<ProviderT>::GetNumProviders() const {
 	return startChannels.size();
 }
 
+template <class ProviderT>
+size_t ChannelManagerBase<ProviderT>::GetNumChannels() const {
+	return channelMappings.size();
+}
 
 template <class ProviderT>
 auto ChannelManagerBase<ProviderT>::ProviderBegin() const ->ProviderIterator {

@@ -1,8 +1,13 @@
+#-------------------------------------------------------------------------------
+# Remote Control Protocol
+# A specialized network protocol implemented over UDP. Helps RC control connections.
+#-------------------------------------------------------------------------------
+
 message("-RemoteControlProtocol")
 
 # Input files
-FILE(GLOB_RECURSE sources src/*.c*)
-FILE(GLOB_RECURSE headers src/*.h*)
+FILE(GLOB_RECURSE sources *.c*)
+FILE(GLOB_RECURSE headers *.h*)
 
 
 # Filters
@@ -15,22 +20,19 @@ set_property(TARGET RemoteControlProtocol PROPERTY CXX_STANDARD 11)
 add_definitions(-DSFML_STATIC)
 
 # Dependencies
-if (WINDOWS_BUILD)
+if (REMCON_WINDOWS)
 	set(ADDITIONAL_LINKS "ws2_32")
-elseif (${COMPILER} STREQUAL "gcc")
+elseif (${REMCON_LINK_COMPILER} STREQUAL "gcc")
 	set(ADDITIONAL_LINKS "pthread")
 endif()
 
-if (CMAKE_C_FLAGS_DEBUG)
-	set(LINKS sfml-network-s-d sfml-system-s-d)
-	message(debug)
-else ()
-	message(release)
-	set(LINKS sfml-network-s sfml-system-s)
-endif()
-
-
-target_link_libraries(RemoteControlProtocol ${LINKS} ${ADDITIONAL_LINKS})
+# Linker
+target_link_libraries(RemoteControlProtocol 
+	debug sfml-network-s-d
+	debug sfml-system-s-d
+	optimized sfml-network-s
+	optimized sfml-system-s
+	${ADDITIONAL_LINKS})
 
 
 

@@ -1,88 +1,131 @@
+#-------------------------------------------------------------------------------
+# Remote Control Server root CMake file
+# Contains 
+#	- platform detection
+#	- solution configurations
+#	- paths
+# Additional subdirectories
+#-------------------------------------------------------------------------------
+
 message("Remote Control Server [Cpp]")
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.2)
 
 
-# Solution properties
+#---------------------------------------
+# Create project
+#---------------------------------------
 set(PROJECT_NAME Remote-Control-Server)
 
+project( ${PROJECT_NAME} )
+
+
+#---------------------------------------
+# Project properties, build configs
+#---------------------------------------
+
+# set output paths
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
 
-project( ${PROJECT_NAME} )
+# set build configurations
+set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE TYPE INTERNAL FORCE )
 
+
+#---------------------------------------
 # Platform detection
+#---------------------------------------
 if (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-	set(WINDOWS_BUILD 1)
+	set(REMCON_WINDOWS 1)
 elseif (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
-	set(LINUX_BUILD 1)
+	set(REMCON_LINUX 1)
 endif ()
 
 if (${CMAKE_SIZEOF_VOID_P} EQUAL 8)
-	set(ARCH_64BIT 1)
+	set(REMCON_64BIT 1)
 else ()
-	set(ARCH_32BIT 1)
+	set(REMCON_32BIT 1)
 endif ()
 
-# Get platform/compiler/architecture specific link directory
+
+#---------------------------------------
+# Preprocessor definitions
+#---------------------------------------
+if (REMCON_64BIT)
+	add_definitions(-DREMCON_64BIT)
+else ()
+	add_definitions(-DREMCON_32BIT)
+endif()
+
+if(REMCON_WINDOWS)
+	add_definitions(-DREMCON_WINDOWS)
+elseif(REMCON_LINUX)
+	add_definitions(-DREMCON_LINUX)
+endif()
+
+#---------------------------------------
+# Include and link paths
+#---------------------------------------
+
+include_directories(${CMAKE_CURRENT_LIST_DIR}/Externals/include)
 
 # get platform
-set(PLATFORM "any")
-if (WINDOWS_BUILD)
-	set(PLATFORM "win")
-elseif (LINUX_BUILD)
-	set(PLATFORM "linux")
+if (REMCON_WINDOWS)
+	set(REMCON_LINK_OS "win")
+elseif (REMCON_LINUX)
+	set(REMCON_LINK_OS "linux")
+else ()
+	set(REMCON_LINK_OS "unknown")
 endif () 
 
 # get compiler
-set(COMPILER "any")
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
-	set(COMPILER "gcc")
-elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
-	message("MSVC " ${CMAKE_CXX_COMPILER_VERSION})
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+	set(REMCON_LINK_COMPILER "gcc")
+elseif ("MSVC" STREQUAL "${CMAKE_CXX_COMPILER_ID}")
 	if (MSVC12)
-		set(COMPILER "msvc12")
+		set(REMCON_LINK_COMPILER "msvc12")
 	elseif (MSVC14)
-		set(COMPILER "msvc14")
+		set(REMCON_LINK_COMPILER "msvc14")
 	endif ()
+else ()
+	set(REMCON_LINK_COMPILER "unknown")
 endif ()
 
 # get architecture
-if (ARCH_64BIT)
-	set(ARCHITECTURE "x64")
-elseif (ARCH_32BIT)
-	set(ARCHITECTURE "x32")
-elseif (NOT ARCHITECTURE)
-	set(ARCHITECTURE "any")
+if (REMCON_64BIT)
+	set(REMCON_LINK_ARCHITECTURE "x64")
+elseif (REMCON_32BIT)
+	set(REMCON_LINK_ARCHITECTURE "x32")
+else ()
+	set(REMCON_LINK_ARCHITECTURE "unknown")
 endif ()
 
-set(EXTERNAL_FOLDER ${PLATFORM}_${COMPILER}_${ARCHITECTURE})
+# display information 
+set(REMCON_LINK_PLATFORM "${REMCON_LINK_OS}_${REMCON_LINK_COMPILER}_${REMCON_LINK_ARCHITECTURE}")
+message("Looking for externals in: ${REMCON_LINK_PLATFORM}")
 
-# display platform
-message("Target platform is: " ${PLATFORM})
-message("Compiler is: " ${COMPILER})
-message("Target architecture is: " ${ARCHITECTURE})
+# set up externals path
+if ((${REMCON_LINK_PLATFORM} MATCHES ".*unknown.*") OR NOT IS_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/Externals/lib/${REMCON_LINK_PLATFORM})
+	set(REMCON_LINK_PATH custom)
+else ()
+	set(REMCON_LINK_PATH ${CMAKE_CURRENT_LIST_DIR}/Externals/lib/${REMCON_LINK_PLATFORM})
+endif ()
 
-# Paths
-set(INCLUDE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/include)
-include_directories(${INCLUDE_PATH})
-set(LIBRARY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Externals/lib/${EXTERNAL_FOLDER})
-link_directories(${LIBRARY_PATH})
-link_directories(${CMAKE_BINARY_DIR}/bin)
+link_directories(${REMCON_LINK_PATH})
 
-message("External libs in: " ${LIBRARY_PATH})
+message("External link path: ${REMCON_LINK_PATH}")
 
-# Solution build configs
-if(CMAKE_CONFIGURATION_TYPES)
-   set(CMAKE_CONFIGURATION_TYPES Debug Release)
-endif()
+#---------------------------------------
+# Add sub-folders
+#---------------------------------------
+include_directories(${CMAKE_CURRENT_LIST_DIR})
 
-
-# Add project to solution
-add_subdirectory(RemoteControl)
+add_subdirectory(RemoteControlServer)
 add_subdirectory(RemoteControlProtocol)
 add_subdirectory(Server)
 add_subdirectory(ServoDriver)
 add_subdirectory(Test)
+
+
 

@@ -18,5 +18,5 @@ public:
 	/// Get servo state.
 	/// \param port The index of the queried port. Ranges from 0 to GetNumPorts().
 	/// \return Current steering of the servo.
-	virtual float GetState(int port = 0) = 0;
+	virtual float GetState(int port = 0) const = 0;
 };

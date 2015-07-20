@@ -11,8 +11,8 @@
 #include <csignal>
 #include <cstring>
 
-#include "../../RemoteControlProtocol/src/RcpPacket.h"
-#include "../../RemoteControlProtocol/src/RcpSocket.h"
+#include <RemoteControlProtocol/RcpPacket.h>
+#include <RemoteControlProtocol/RcpSocket.h>
 
 using namespace std;
 using namespace std::chrono;
@@ -145,69 +145,69 @@ void BackgroundThreadFunc() {
 		// process incoming packet
 		switch (state)
 		{
-		case eState::IDLE:
-			// in idle state, we don't give a shit about what the other guy sais, just respond with an error
-			if (msg.msg != eMessageType::CONTROL) {
-				msg.msg = eMessageType::CONTROL;
-				msg.param1 = eMessageParam::INVALID_REQUEST;
-				socket.send(msg.raw, Message::HeaderSize, true);
-			}
-			break;
-		case eState::SLAVE:
-			// seek for LATENCY/LOSS/BW start requests, and reply with accept control message
-			if (msg.msg == eMessageType::LATENCY && msg.param1 == eMessageParam::BEGIN) {
-				state = eState::LATENCY;
-				cout << "Doing latency & loss test..." << endl;
-				// reply
-				msg.msg = eMessageType::CONTROL;
-				msg.param1 = eMessageParam::SUCCESS;
-				socket.send(msg.raw, Message::HeaderSize, true);
-			}
-			else if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::BEGIN) {
-				state = eState::BANDWIDTH;
-				bytesRecieved = 0;
-				cout << "Doing bandwidth test..." << endl;
-				// reply
-				msg.msg = eMessageType::CONTROL;
-				msg.param1 = eMessageParam::SUCCESS;
-				socket.send(msg.raw, Message::HeaderSize, true);
-			}
-			// occasionally print CHAT messages
-			else if (msg.msg == eMessageType::CHAT) {
-				// append a zero-terminator in case it's missing
-				msg.raw[recvPacket.getDataSize() >= RcpSocket::MaxDatagramSize ? recvPacket.getDataSize() : RcpSocket::MaxDatagramSize - 1] = '\0';
-				// print dat shit
-				cout << "Message: " << msg.data << endl;
-			}
-			break;
-		case eState::LATENCY:
-			if (msg.msg == eMessageType::LATENCY && msg.param1 == eMessageParam::END) {
-				state = eState::SLAVE;
-				cout << "Latency test ended." << endl;
+			case eState::IDLE:
+				// in idle state, we don't give a shit about what the other guy sais, just respond with an error
+				if (msg.msg != eMessageType::CONTROL) {
+					msg.msg = eMessageType::CONTROL;
+					msg.param1 = eMessageParam::INVALID_REQUEST;
+					socket.send(msg.raw, Message::HeaderSize, true);
+				}
 				break;
-			}
-			// echo as soon as possible!
-			socket.send(&msg, Message::HeaderSize, false);
-			cout << "Echo sent!" << endl;
-			break;
-		case eState::BANDWIDTH:
-			if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::END) {
-				state = eState::SLAVE;
-				cout << "Bandwidth test ended." << endl;
+			case eState::SLAVE:
+				// seek for LATENCY/LOSS/BW start requests, and reply with accept control message
+				if (msg.msg == eMessageType::LATENCY && msg.param1 == eMessageParam::BEGIN) {
+					state = eState::LATENCY;
+					cout << "Doing latency & loss test..." << endl;
+					// reply
+					msg.msg = eMessageType::CONTROL;
+					msg.param1 = eMessageParam::SUCCESS;
+					socket.send(msg.raw, Message::HeaderSize, true);
+				}
+				else if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::BEGIN) {
+					state = eState::BANDWIDTH;
+					bytesRecieved = 0;
+					cout << "Doing bandwidth test..." << endl;
+					// reply
+					msg.msg = eMessageType::CONTROL;
+					msg.param1 = eMessageParam::SUCCESS;
+					socket.send(msg.raw, Message::HeaderSize, true);
+				}
+				// occasionally print CHAT messages
+				else if (msg.msg == eMessageType::CHAT) {
+					// append a zero-terminator in case it's missing
+					msg.raw[recvPacket.getDataSize() >= RcpSocket::MaxDatagramSize ? recvPacket.getDataSize() : RcpSocket::MaxDatagramSize - 1] = '\0';
+					// print dat shit
+					cout << "Message: " << msg.data << endl;
+				}
 				break;
-			}
-			else if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::QUERY) {
-				msg.msg = eMessageType::BANDWIDTH;
-				msg.param1 = eMessageParam::QUERY;
-				msg.param2 = bytesRecieved;
-				socket.send(msg.raw, msg.HeaderSize, true);
+			case eState::LATENCY:
+				if (msg.msg == eMessageType::LATENCY && msg.param1 == eMessageParam::END) {
+					state = eState::SLAVE;
+					cout << "Latency test ended." << endl;
+					break;
+				}
+				// echo as soon as possible!
+				socket.send(&msg, Message::HeaderSize, false);
+				cout << "Echo sent!" << endl;
 				break;
-			}
-			// update bytes counter
-			bytesRecieved += recvPacket.getDataSize();
-			break;
-		default:
-			break;
+			case eState::BANDWIDTH:
+				if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::END) {
+					state = eState::SLAVE;
+					cout << "Bandwidth test ended." << endl;
+					break;
+				}
+				else if (msg.msg == eMessageType::BANDWIDTH && msg.param1 == eMessageParam::QUERY) {
+					msg.msg = eMessageType::BANDWIDTH;
+					msg.param1 = eMessageParam::QUERY;
+					msg.param2 = bytesRecieved;
+					socket.send(msg.raw, msg.HeaderSize, true);
+					break;
+				}
+				// update bytes counter
+				bytesRecieved += recvPacket.getDataSize();
+				break;
+			default:
+				break;
 		}
 	}
 }
@@ -318,14 +318,12 @@ int RcpBenchmark() {
 			uint16_t port = atoi(tokens[2].c_str());
 
 			// try to connect
-			bool result = socket.connect(address, port);
-
-			// check result
-			if (!result) {
-				cout << "Could not connect to remote peer specified." << endl;
-			}
-			else {
+			try {
+				socket.connect(address, port);
 				cout << "Connected to " << socket.getRemoteAddress() << ":" << socket.getRemotePort() << "!" << endl;
+			}
+			catch (RcpException& e) {
+				cout << "Could not connect to remote peer specified." << endl;
 			}
 		}
 		else if (command == "disconnect") {
@@ -353,10 +351,11 @@ int RcpBenchmark() {
 			signal(SIGINT, CancelSocket);
 
 			// start accepting
-			if (socket.accept()) {
+			try {
+				socket.accept();
 				cout << "Connection accepted from " << socket.getRemoteAddress() << ":" << socket.getRemotePort() << "!" << endl;
 			}
-			else {
+			catch (RcpException& e) {
 				cout << "Could not accept connection." << endl;
 			}
 
@@ -544,9 +543,12 @@ void Latency(size_t numPackets, nanoseconds interval, size_t packetSize) {
 		msg.msg = eMessageType::LATENCY;
 		msg.param1 = eMessageParam::QUERY;
 		msg.param2 = i;
-		if (socket.send(msg.raw, Message::HeaderSize, false)) {
+		try {
+			socket.send(msg.raw, Message::HeaderSize, false);
 			sendMap.insert({ msg.param2, high_resolution_clock::now() });
 		}
+		catch (...) {}
+
 		this_thread::sleep_for(interval);
 	}
 

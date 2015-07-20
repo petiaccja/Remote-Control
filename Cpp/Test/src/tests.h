@@ -1,4 +1,0 @@
-
-
-int RcpTest();
-int RcpBenchmark();

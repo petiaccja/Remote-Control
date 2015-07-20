@@ -1,8 +1,13 @@
+#-------------------------------------------------------------------------------
+# Server
+# The main program to connect the libraries and run the server.
+#-------------------------------------------------------------------------------
+
 message("-Server")
 
 # Input files
-FILE(GLOB_RECURSE sources src/*.c*)
-FILE(GLOB_RECURSE headers src/*.h*)
+FILE(GLOB_RECURSE sources *.c*)
+FILE(GLOB_RECURSE headers *.h*)
 
 # Filters
 

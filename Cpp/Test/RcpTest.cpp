@@ -6,18 +6,10 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-#include "../../RemoteControlProtocol/src/RcpPacket.h"
-#include "../../RemoteControlProtocol/src/RcpSocket.h"
+#include <RemoteControlProtocol/RcpPacket.h>
+#include <RemoteControlProtocol/RcpSocket.h>
 #include <future>
 #include <SFML/Network.hpp>
-
-#ifdef _MSC_VER
-#include <conio.h>
-#else 
-char _getch() {
-	return std::cin.get();
-}
-#endif
 
 using namespace std;
 
@@ -526,11 +518,11 @@ void CommunicationTest() {
 	thread socketThread1(
 		[&]() {
 		bool result;
-		result = sock1.accept();
-		if (result) {
+		try {
+			sock1.accept();
 			//cout << "accepted" << endl;
 		}
-		else {
+		catch (...) {
 			//cout << "could not accept connection" << endl;
 		}
 		sock1.setBlocking(false);
@@ -572,11 +564,11 @@ void CommunicationTest() {
 	thread socketThread2(
 		[&]() {
 		bool result;
-		result = sock2.connect("localhost", 5630);
-		if (result) {
+		try {
+			sock2.connect("localhost", 5630);
 			//cout << "connected" << endl;
 		}
-		else {
+		catch (...) {
 			//cout << "could not connect" << endl;
 		}
 		sock2.setBlocking(false);

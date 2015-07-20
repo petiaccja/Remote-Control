@@ -8,5 +8,5 @@ class IProviderBase {
 public:
 	/// Get the number of ports on this provider.
 	/// \return Number of ports.
-	virtual int GetNumPorts() = 0;
+	virtual int GetNumPorts() const = 0;
 };
