@@ -2,7 +2,7 @@
 
 
 class ChannelManagerServo;
-class ServoMessage;
+struct ServoMessage;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Translates commands to Servo Channel Manager function calls.

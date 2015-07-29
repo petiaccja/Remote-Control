@@ -73,7 +73,7 @@ struct ServoMessage : public MessageBase {
 
 
 /// Authentication messages.
-struct AuthenticationMessage : public MessageBase {
+struct ConnectionMessage : public MessageBase {
 	enum eAction : uint8_t {
 		CONNECTION_REQUEST = 1,
 		CONNECTION_REPLY = 2,

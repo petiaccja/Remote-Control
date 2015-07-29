@@ -9,6 +9,7 @@
 // needed for colored console text while debugging
 #ifdef _MSC_VER
 #include <Windows.h>
+#pragma warning(disable : 4244)
 #endif
 
 using namespace std;
@@ -27,7 +28,7 @@ RcpSocket::RcpSocket() {
 	remoteBatchNumReserved = remoteBatchNum;
 	runIoThread = false;
 
-	cancelCallId = 896345; // in the end it doesn't even matter | shit, I'm that programmer again... 
+	cancelCallId = 896345; // any number will suffice
 	cancelNotify = cancelCallId;
 
 	initDebug(); // DEBUG
@@ -126,8 +127,9 @@ void RcpSocket::setTiming(long long totalMs, long long shortMs) {
 ////////////////////////////////////////////////////////////////////////////////
 // Connection setup
 
-void RcpSocket::accept() {
+void RcpSocket::accept(int timeout) {
 	cancelCallId++;
+	auto timeoutStart = steady_clock::now();
 
 	if (state != DISCONNECTED) {
 		throw RcpInvalidCallException("already connected");
@@ -153,8 +155,11 @@ void RcpSocket::accept() {
 	// - wait for SYN
 	bool isData = false;
 	while (!isData) {
-		if (!selector.wait()) {
-			continue;
+		long long timeoutLeft = duration_cast<milliseconds>(timeoutStart - steady_clock::now()).count() + timeout;
+		sf::Time waitTime = 
+			timeout == std::numeric_limits<int>::max()	?	sf::Time::Zero : sf::milliseconds(timeoutLeft);
+		if (timeoutLeft <= 0 || !selector.wait(waitTime)) {
+			throw RcpTimeoutException("requested timeout is over");
 		}
 
 		// receive packet
@@ -190,14 +195,16 @@ void RcpSocket::accept() {
 
 	// - wait for ACK
 	auto waitBegin = steady_clock::now();
-	long long timeLeft;
+	long long timeLeft; // milliseconds
 	bool isAck;
 	do {
 		// how much time is left to get get a packet
 		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + TIMEOUT_TOTAL;
-
+		long long timeoutLeft = duration_cast<milliseconds>(timeoutStart - steady_clock::now()).count() + timeout;
+		timeLeft = min(timeoutLeft, timeLeft);
+		
 		// wait for a packet
-		if (!selector.wait(sf::milliseconds(timeLeft))) {
+		if (timeLeft <= 0 || !selector.wait(sf::milliseconds(timeLeft))) {
 			throw RcpNetworkException("client's response timed out");
 		}
 		socket.receive(packet, responseAddress, responsePort);
@@ -234,7 +241,7 @@ void RcpSocket::accept() {
 	startIoThread();
 }
 
-void RcpSocket::connect(std::string address, uint16_t port) {
+void RcpSocket::connect(std::string address, uint16_t port, int timeout) {
 	cancelCallId++;
 
 	if (state != DISCONNECTED) {
@@ -277,10 +284,10 @@ void RcpSocket::connect(std::string address, uint16_t port) {
 	bool isSynAck = false;
 	do {
 		// how much time is left to get get a packet
-		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + TIMEOUT_TOTAL;
+		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + min((unsigned)timeout, TIMEOUT_TOTAL);
 
 		// wait for a packet
-		if (!selector.wait(sf::milliseconds(timeLeft))) {
+		if (timeLeft <= 0 || !selector.wait(sf::milliseconds(timeLeft))) {
 			throw RcpNetworkException("client's response timed out");
 		}
 		socket.receive(packet, responseAddress, responsePort);
@@ -513,7 +520,7 @@ void RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 }
 
 
-bool RcpSocket::receive(RcpPacket& packet) {
+bool RcpSocket::receive(RcpPacket& packet, int timeout) {
 	cancelCallId++;
 
 	// check errors
@@ -530,12 +537,9 @@ bool RcpSocket::receive(RcpPacket& packet) {
 	bool isData = false;
 	auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId || state != CONNECTED; };
 	if (isBlocking) {
-		recvCondvar.wait(lk, IsDataPred);
+		isData = recvCondvar.wait_for(lk, milliseconds(timeout), IsDataPred);
 		if (cancelNotify == cancelCallId || state != CONNECTED) {
 			throw RcpInterruptedException("function call was cancelled or connection was closed");
-		}
-		else {
-			isData = true;
 		}
 	}
 	else {

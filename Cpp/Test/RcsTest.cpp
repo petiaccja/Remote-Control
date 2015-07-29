@@ -1,13 +1,19 @@
 #include "tests.h"
+#include "ThreadEnqueue.h"
+#include "Barrier.h"
 
 #include <RemoteControlServer/ChannelManagerServo.h>
 #include <RemoteControlServer/ServoProviderDummy.h>
 #include <RemoteControlServer/Serializer.h>
 #include <RemoteControlServer/Message.h>
+#include <RemoteControlServer/RemoteCOntrolServer.h>
 
 
 #include <iostream>
 #include <iomanip>
+#include <chrono>
+#include <thread>
+#include <future>
 
 
 #ifdef _MSC_VER
@@ -24,8 +30,10 @@ bool TestSerializer();
 bool TestMessageSerialization();
 bool TestDecoder();
 void TestServoManager();
+bool TestServerConnection();
 
 int RcsTest() {
+	/*
 	// test serializetion of primitives
 	if (TestSerializer()) {
 		cout << "Serializer works!" << endl;
@@ -48,6 +56,13 @@ int RcsTest() {
 	}
 	else {
 		cout << "Message decoder failed" << endl;
+	}
+	*/
+	if (TestServerConnection()) {
+		cout << "Server connection works!" << endl;
+	}
+	else {
+		cout << "Server connection failed" << endl;
 	}
 
 	_getch();
@@ -137,26 +152,26 @@ bool TestMessageSerialization() {
 	}
 
 	//----------------------------
-	// AuthenticationMessage 
+	// ConnectionMessage 
 	//----------------------------
-	AuthenticationMessage auth;
+	ConnectionMessage auth;
 	auth.isOk = false;
 	const unsigned char password[] = "password";
 
 	// connection request, no special data
-	auth.action = AuthenticationMessage::CONNECTION_REQUEST;
+	auth.action = ConnectionMessage::CONNECTION_REQUEST;
 	data = auth.Serialize();
-	auth.action = (AuthenticationMessage::eAction)7832456;
-	if (!auth.Deserlialize(data.data(), data.size()) || auth.action != AuthenticationMessage::CONNECTION_REQUEST) {
+	auth.action = (ConnectionMessage::eAction)7832456;
+	if (!auth.Deserlialize(data.data(), data.size()) || auth.action != ConnectionMessage::CONNECTION_REQUEST) {
 		return false;
 	}
 
 	// connection reply: isOk must be false
-	auth.action = AuthenticationMessage::CONNECTION_REPLY;
+	auth.action = ConnectionMessage::CONNECTION_REPLY;
 	data = auth.Serialize();
-	auth.action = (AuthenticationMessage::eAction)873465;
+	auth.action = (ConnectionMessage::eAction)873465;
 	auth.isOk = true;
-	if (!auth.Deserlialize(data.data(), data.size()) || auth.action != AuthenticationMessage::CONNECTION_REPLY || auth.isOk != false) {
+	if (!auth.Deserlialize(data.data(), data.size()) || auth.action != ConnectionMessage::CONNECTION_REPLY || auth.isOk != false) {
 		return false;
 	}
 
@@ -164,12 +179,12 @@ bool TestMessageSerialization() {
 	for (auto v : password) {
 		auth.password.push_back(v);
 	}
-	auth.action = AuthenticationMessage::PASSWORD_REPLY;
+	auth.action = ConnectionMessage::PASSWORD_REPLY;
 	data = auth.Serialize();
-	auth.action = (AuthenticationMessage::eAction)8743658;
+	auth.action = (ConnectionMessage::eAction)8743658;
 	auth.password.clear();
 	if (!auth.Deserlialize(data.data(), data.size()) ||
-		auth.action != AuthenticationMessage::PASSWORD_REPLY ||
+		auth.action != ConnectionMessage::PASSWORD_REPLY ||
 		auth.password.size() != sizeof(password) ||
 		memcmp(auth.password.data(), password, sizeof(password)) != 0)
 	{
@@ -227,7 +242,7 @@ bool TestDecoder() {
 
 	dec.SetHandler(eMessageType::CONNECTION, 
 		[&](const void* data, size_t size) {
-			AuthenticationMessage msg;
+			ConnectionMessage msg;
 			if (msg.Deserlialize(data, size))
 				authMsgCount++;
 	});
@@ -245,8 +260,8 @@ bool TestDecoder() {
 	servoMsg.state = 0.5f;
 	auto servoMsgData = servoMsg.Serialize();
 
-	AuthenticationMessage authMsg;
-	authMsg.action = AuthenticationMessage::CONNECTION_REQUEST;
+	ConnectionMessage authMsg;
+	authMsg.action = ConnectionMessage::CONNECTION_REQUEST;
 	auto authMsgData = authMsg.Serialize();
 
 	dec.ProcessMessage(servoMsgData.data(), servoMsgData.size());
@@ -303,4 +318,80 @@ void TestServoManager() {
 
 	manager.ClearProviders();
 	ListChannels();
+}
+
+
+
+bool TestServerConnection() {
+	RemoteControlServer server;
+	RcpSocket socket;
+	Barrier barrier;
+	Sequence AT;
+	bool clientOk = true;
+	bool serverOk = true;
+	RcpPacket packet;
+	
+	// server
+	thread serverThread([&] {
+		server.SetLocalPort(5630);
+		server.SetPassword({ 'a', 's', 'd' });
+
+		// listen for incoming connection
+		AT(0);
+		if (!server.Listen()) {
+			serverOk = false;
+			return;
+		}
+		
+		// reply to client
+		AT(400);
+		if (!server.Reply(true)) {
+			serverOk = false;
+			return;
+		}
+
+		// disconnect
+		AT(800);
+		server.Disconnect();
+	});
+
+	// simulated client
+	thread clientThread([&] {
+		ConnectionMessage connMsg;
+		vector<uint8_t> data;
+
+		socket.bind(5631);
+		
+		// connect to server
+		AT(200);
+		socket.connect("localhost", 5630);
+		connMsg.action = ConnectionMessage::CONNECTION_REQUEST;
+		data = connMsg.Serialize();
+		socket.send(data.data(), data.size(), true);
+
+		// get server's reply
+		AT(600);
+		socket.receive(packet);
+		connMsg.Deserlialize(packet.getData(), packet.getDataSize());
+		if (!(connMsg.action == ConnectionMessage::CONNECTION_REPLY && connMsg.isOk)) {
+			clientOk = false;
+			return;
+		}
+
+		// get server's disconnect msg
+		socket.receive(packet);
+		connMsg.Deserlialize(packet.getData(), packet.getDataSize());
+		if (!(connMsg.action == ConnectionMessage::DISCONNECT)) {
+			clientOk = false;
+			return;
+		}
+
+		// answer to server's disconnest msg
+		socket.send(packet);
+	});
+
+	serverThread.join();
+	clientThread.join();
+
+	return true;
 }

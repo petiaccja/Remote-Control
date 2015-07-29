@@ -151,13 +151,13 @@ public:
 	/// \throws RcpInvalidCallException The current state of the socket does not allow calling accept().
 	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
 	/// \throws RcpNetworkException Internal network or protocol problem happened.
-	void accept();
+	void accept(int timeout = std::numeric_limits<int>::max());
 
 	/// Initiate connection to remote peer.
 	/// \throws RcpInvalidCallException The current state of the socket does not allow calling accept().
 	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
 	/// \throws RcpNetworkException Internal network or protocol problem happened.
-	void connect(std::string address, uint16_t port);
+	void connect(std::string address, uint16_t port, int timeout = std::numeric_limits<int>::max());
 
 	/// Close current connection.
 	void disconnect();
@@ -182,7 +182,7 @@ public:
 	/// \return Return true if succesfully received, false if no packet was ready.
 	/// \throws RcpInvalidCallException The current state of the socket does not allow receiving packets.
 	/// \throws RcpInterruptedException The function has been cancelled by a cancel() call.
-	bool receive(RcpPacket& packet);
+	bool receive(RcpPacket& packet, int timeout = std::numeric_limits<int>::max());
 	
 
 	// --- Miscellaneous --- //

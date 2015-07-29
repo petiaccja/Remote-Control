@@ -75,15 +75,15 @@ constexpr size_t ServoMessage::SerializedSize() {
 
 // Authentication message
 
-std::vector<uint8_t> AuthenticationMessage::Serialize() {
+std::vector<uint8_t> ConnectionMessage::Serialize() {
 	Serializer ser;
 	ser << (uint8_t)eMessageType::CONNECTION;
 	ser << (uint8_t)action;
 	switch (action) {
-		case AuthenticationMessage::CONNECTION_REPLY:
+		case ConnectionMessage::CONNECTION_REPLY:
 			ser << isOk;
 			break;
-		case AuthenticationMessage::PASSWORD_REPLY:
+		case ConnectionMessage::PASSWORD_REPLY:
 			ser << (uint32_t)password.size();
 			for (auto v : password) {
 				ser << v;
@@ -93,7 +93,7 @@ std::vector<uint8_t> AuthenticationMessage::Serialize() {
 	return ser.Get();
 }
 
-bool AuthenticationMessage::Deserlialize(const void* data, size_t size) {
+bool ConnectionMessage::Deserlialize(const void* data, size_t size) {
 	eMessageType type;
 	uint32_t pwSize;
 
@@ -111,14 +111,14 @@ bool AuthenticationMessage::Deserlialize(const void* data, size_t size) {
 	}
 
 	switch (action) {
-		case AuthenticationMessage::CONNECTION_REPLY:
+		case ConnectionMessage::CONNECTION_REPLY:
 			if (size < 3) {
 				return false;
 			}
 			ser.Set((uint8_t*)data + 2, 1);
 			ser >> isOk;
 			break;
-		case AuthenticationMessage::PASSWORD_REPLY:
+		case ConnectionMessage::PASSWORD_REPLY:
 			if (size < 6) {
 				return false;
 			}
@@ -216,4 +216,6 @@ bool EnumChannelsMessage::Deserlialize(const void* data, size_t size) {
 	for (; numChannels > 0; numChannels--) {
 		ser >> channels[numChannels - 1];
 	}
+
+	return true;
 }

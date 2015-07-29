@@ -44,3 +44,9 @@ public:
 	using RcpException::RcpException;
 };
 
+class RcpTimeoutException : public RcpException {
+public:
+	using RcpException::RcpException;
+};
+
+
