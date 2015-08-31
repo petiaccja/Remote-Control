@@ -90,7 +90,7 @@ void RcpSocket::cancel() {
 }
 
 bool RcpSocket::isConnected() const {
-	return state == CONNECTED;
+	return state == CONNECTED || state == CLOSING;
 }
 
 std::string RcpSocket::getRemoteAddress() const {
@@ -110,7 +110,7 @@ bool RcpSocket::getBlocking() const {
 }
 
 uint16_t RcpSocket::getLocalPort() const {
-	return socket.getLocalPort(); 
+	return socket.getLocalPort();
 }
 
 void RcpSocket::setTiming(long long totalMs, long long shortMs) {
@@ -133,7 +133,7 @@ void RcpSocket::accept(int timeout) {
 
 	if (state != DISCONNECTED) {
 		throw RcpInvalidCallException("already connected");
-	} 
+	}
 	if (!isBound()) {
 		throw RcpInvalidCallException("must bind the socket first");
 	}
@@ -156,8 +156,8 @@ void RcpSocket::accept(int timeout) {
 	bool isData = false;
 	while (!isData) {
 		long long timeoutLeft = duration_cast<milliseconds>(timeoutStart - steady_clock::now()).count() + timeout;
-		sf::Time waitTime = 
-			timeout == std::numeric_limits<int>::max()	?	sf::Time::Zero : sf::milliseconds(timeoutLeft);
+		sf::Time waitTime =
+			timeout == std::numeric_limits<int>::max() ? sf::Time::Zero : sf::milliseconds(timeoutLeft);
 		if (timeoutLeft <= 0 || !selector.wait(waitTime)) {
 			throw RcpTimeoutException("requested timeout is over");
 		}
@@ -202,7 +202,7 @@ void RcpSocket::accept(int timeout) {
 		timeLeft = duration_cast<milliseconds>(waitBegin - steady_clock::now()).count() + TIMEOUT_TOTAL;
 		long long timeoutLeft = duration_cast<milliseconds>(timeoutStart - steady_clock::now()).count() + timeout;
 		timeLeft = min(timeoutLeft, timeLeft);
-		
+
 		// wait for a packet
 		if (timeLeft <= 0 || !selector.wait(sf::milliseconds(timeLeft))) {
 			throw RcpNetworkException("client's response timed out");
@@ -335,18 +335,32 @@ void RcpSocket::connect(std::string address, uint16_t port, int timeout) {
 }
 
 
+void RcpSocket::disconnect2() {
+
+}
+
+
 // ISSUE:
 // This doesn't push pending reliable packets, just kills the connection. Not really good...
-void RcpSocket::disconnect() {
-	// only when connected
+void RcpSocket::disconnect1() {
+	// This whole method is only to be performed when state is CONNECTED.
+	// However, on must still call disconnect if the other peer cancelled the connection.
+	// In this case, the socket falls into CLOSING state. All communication is ceased, but
+	// the internal structure remains intact, holding pending messages.
+	// This is to allow receiving pending messages even if the connection is dead by then.
+	if (state == CLOSING) {
+		reset();
+		state = DISCONNECTED;
+		return;
+	}
+	// Closing state is handled above. If that was not the case, but CONNECTED instead,
+	// go on with the method.
 	if (state != CONNECTED) {
 		return;
 	}
 
 	// stop io thread
 	stopIoThread();
-
-	state = CLOSING;
 
 	// try to push pending reliable packets
 	// WARNING: this loop has not been tested, and is not expected to work!
@@ -357,7 +371,7 @@ void RcpSocket::disconnect() {
 		// select the one with shortest expiration
 		RecentPacketInfo* resendThis = nullptr;
 		auto now = steady_clock::now();
-		microseconds sleepTime(2*TIMEOUT_TOTAL*1000);
+		microseconds sleepTime(2 * TIMEOUT_TOTAL * 1000);
 		for (auto& v : recentPackets) {
 			microseconds timeRemainingTotal = duration_cast<microseconds>(v.second.send - now + chrono::milliseconds(TIMEOUT_SHORT));
 			microseconds timeRemainingResend = duration_cast<microseconds>(v.second.lastResend - now + chrono::milliseconds(TIMEOUT_SHORT));
@@ -419,7 +433,7 @@ void RcpSocket::disconnect() {
 	header.flags = FIN;
 
 	headerSer = header.serialize();
-	
+
 	long long waitTotal = 0;
 	bool finAckownledged = false;
 	while (!finAckownledged) {
@@ -456,7 +470,7 @@ void RcpSocket::disconnect() {
 			}
 		}
 	}
-	
+
 
 	// set disconnected state
 	reset();
@@ -490,7 +504,7 @@ void RcpSocket::sendEx(const void* data, size_t size, uint32_t flags) {
 	header.sequenceNumber = ++localSeqNum;
 	header.batchNumber = (flags & REL) ? ++localBatchNum : localBatchNum;
 	header.flags = flags;
-	
+
 	auto rawData = makePacket(header, data, size);
 	if (rawData.size() > sf::UdpSocket::MaxDatagramSize) {
 		false;
@@ -524,7 +538,7 @@ bool RcpSocket::receive(RcpPacket& packet, int timeout) {
 	cancelCallId++;
 
 	// check errors
-	if (state != CONNECTED) {
+	if (state != CONNECTED && state != CLOSING) {
 		throw RcpInvalidCallException("socket must be connected to receive");
 	}
 
@@ -535,19 +549,53 @@ bool RcpSocket::receive(RcpPacket& packet, int timeout) {
 
 	// wait on condvar
 	bool isData = false;
-	auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId || state != CONNECTED; };
+	//auto IsDataPred = [this] { return (recvQueue.size() > 0 && recvQueue.front().second == true) || cancelNotify == cancelCallId || (state != CONNECTED && state != CLOSING); };
+	enum eReasonForWakeUp : uint32_t {
+		AVAILABLE_DATA,
+		CANCELLED,
+		CONNECTION_CLOSING,
+	};
+	atomic<eReasonForWakeUp> reasonForWakeUp;
+	auto NotifyPredicate = [this, &reasonForWakeUp] {
+		if (recvQueue.size() > 0 && recvQueue.front().second == true) {
+			// there's a valid incoming packet
+			reasonForWakeUp = AVAILABLE_DATA;
+			return true;
+		}
+		else if (cancelNotify == cancelCallId) {
+			// call was cancelled
+			reasonForWakeUp = CANCELLED;
+			return true;
+		}
+		else if (recvQueue.size() == 0 && state != CONNECTED) {
+			// connection is closing, but there's no data
+			reasonForWakeUp = CONNECTION_CLOSING;
+			return true;
+		}
+		else {
+			return false;
+		}
+	};
+
 	if (isBlocking) {
-		isData = recvCondvar.wait_for(lk, milliseconds(timeout), IsDataPred);
-		if (cancelNotify == cancelCallId || state != CONNECTED) {
-			throw RcpInterruptedException("function call was cancelled or connection was closed");
+		if (!recvCondvar.wait_for(lk, milliseconds(timeout), NotifyPredicate)) {
+			return false;
+		}
+		switch (reasonForWakeUp) {
+			case AVAILABLE_DATA:
+				isData = true;
+				break;
+			case CANCELLED:
+				throw RcpInterruptedException("function call was cancelled, bitch");
+			case CONNECTION_CLOSING:
+				isData = false;
 		}
 	}
 	else {
-		isData = IsDataPred();
+		isData = (recvQueue.size() > 0 && recvQueue.front().second == true);
 	}
 
 	if (!isData) {
-		lk.unlock();
 		return false;
 	}
 
@@ -565,9 +613,6 @@ bool RcpSocket::receive(RcpPacket& packet, int timeout) {
 		it.second.index--;
 	}
 
-	// finally, unlock mutex
-	lk.unlock();
-
 	return true;
 }
 
@@ -580,17 +625,28 @@ void RcpSocket::startIoThread() {
 		ioThread.join();
 	}
 	runIoThread = true;
-	ioThread = std::thread([this] { 
-		ioThreadFunction();
-		if (state == CLOSING) {
+	ioThread = std::thread([this] {
+		// ioThreadFunction returns true if it got a FIN, false otherwise
+		if (ioThreadFunction()) {
 			replyClose();
-			reset();
-			state = DISCONNECTED;
-		}
-		runIoThread = false;
 
-		// interrupt pending receives
-		recvCondvar.notify_all();
+			// clean up message queue
+			lock_guard<mutex> lk(socketMutex);
+
+			decltype(recvQueue) cleanRecvQueue;
+			while (recvQueue.size() > 0) {
+				if (recvQueue.front().second == true) {
+					cleanRecvQueue.push(std::move(recvQueue.front()));
+				}
+				recvQueue.pop();
+			}
+			recvQueue = std::move(cleanRecvQueue);
+
+			recvCondvar.notify_all();
+			state = CLOSING;
+		}
+
+		runIoThread = false;
 	});
 }
 
@@ -602,7 +658,7 @@ void RcpSocket::stopIoThread() {
 	}
 }
 
-void RcpSocket::ioThreadFunction() {
+bool RcpSocket::ioThreadFunction() {
 	// This function in brief:
 	// 1. Select the event closest in time, and wait that time
 	//		Events are the following (event -> action on timout):
@@ -676,7 +732,7 @@ void RcpSocket::ioThreadFunction() {
 					// forcefully close the socket
 					reset();
 					state = DISCONNECTED;
-					return;
+					return false;
 				}
 			}
 		}
@@ -731,7 +787,7 @@ void RcpSocket::ioThreadFunction() {
 				}
 				case FIN: {
 					state = CLOSING;
-					return;
+					return true;
 				}
 				case CANCEL:
 					continue;
@@ -779,6 +835,7 @@ void RcpSocket::ioThreadFunction() {
 			recvCondvar.notify_all();
 		}
 	}
+	return false;
 }
 
 
@@ -1036,19 +1093,19 @@ std::string RcpSocket::debug_PrintState() {
 	ss << "state = ";
 	switch (state)
 	{
-	case RcpSocket::DISCONNECTED:
-		ss << "disconnected";
-		break;
-	case RcpSocket::CONNECTED:
-		ss << "connected to ";
-		break;
-	case RcpSocket::CLOSING:
-		ss << "closing ( " << remoteAddress.toString() << ":" << remotePort << " )";
-		break;
-	default:
-		break;
+		case RcpSocket::DISCONNECTED:
+			ss << "disconnected";
+			break;
+		case RcpSocket::CONNECTED:
+			ss << "connected to ";
+			break;
+		case RcpSocket::CLOSING:
+			ss << "closing connection with ";
+			break;
+		default:
+			break;
 	}
-	if (state != CONNECTED) {
+	if (state != CONNECTED && state != CLOSING) {
 		return ss.str();
 	}
 	ss << remoteAddress.toString() << ":" << remotePort << std::endl;

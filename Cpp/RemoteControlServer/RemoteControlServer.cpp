@@ -33,12 +33,15 @@ RemoteControlServer::~RemoteControlServer() {
 ////////////////////////////////////////////////////////////////////////////////
 // Connection and authentication
 
-bool RemoteControlServer::Listen() {
+bool RemoteControlServer::Listen(int timeout) {
 	// try accepting a connection on the socket
 	try {
 		RcpPacket packet;
 		socket.accept();
-		socket.receive(packet);
+		if (!socket.receive(packet)) {
+			socket.disconnect();
+			return false;
+		}
 		ConnectionMessage msg;
 		bool isGood = msg.Deserlialize(packet.getData(), packet.getDataSize());
 		if (isGood && msg.action == ConnectionMessage::CONNECTION_REQUEST) {
@@ -57,7 +60,7 @@ bool RemoteControlServer::Listen() {
 	}
 }
 
-bool RemoteControlServer::Authenticate() {
+bool RemoteControlServer::Authenticate(int timeout) {
 	if (state != HALF_OPEN) {
 		return false;
 	}
@@ -94,24 +97,31 @@ bool RemoteControlServer::Authenticate() {
 
 }
 
-bool RemoteControlServer::Reply(bool accept) {
+bool RemoteControlServer::Reply(bool accept, int timeout) {
 	if (state != HALF_OPEN && state != AUTHENTICATED) {
 		return false;
 	}
 
-	ConnectionMessage message;
-	message.action = ConnectionMessage::CONNECTION_REPLY;
-	message.isOk = accept;
+	ConnectionMessage message{ ConnectionMessage::CONNECTION_REPLY, accept };
 	
 	auto data = message.Serialize();
 	try {
 		socket.send(data.data(), data.size(), true);
-		state = accept ? CONNECTED : DISCONNECTED;
+
+		if (accept == true) {
+			state = CONNECTED;
+			StartMessageThread();
+		}
+		else {
+			state = DISCONNECTED;
+			socket.disconnect();
+		}
 		return accept;
 	}
 	catch (RcpException& e) {
 		std::cout << e.what() << std::endl;
 		state = DISCONNECTED;
+		socket.disconnect();
 		return false;
 	}
 }
@@ -123,23 +133,34 @@ void RemoteControlServer::Disconnect() {
 		msg.action = ConnectionMessage::DISCONNECT;
 		auto data = msg.Serialize();
 
+		high_resolution_clock::time_point start, end; // DEBUG
+		high_resolution_clock::time_point start2, end2; // DEBUG
+
 		try {
+			// shut down message thread
+			StopMessageThread();
+
 			// send a disconnect indication
 			socket.send(data.data(), data.size(), true);
+
 			// receive a disconnect response
 			int timeout = 5000;
 			auto startTime = steady_clock::now();
 			int timeLeft;
 			do {
 				timeLeft = duration_cast<milliseconds>(steady_clock::now() - startTime).count() + timeout;
-				socket.receive(packet, timeLeft);
-				if (packet.getDataSize() == 0) {
+				std::cout << timeLeft << std::endl;
+				start = high_resolution_clock::now();
+				if (!socket.receive(packet, timeLeft)) {
+					//std::cout << "did not get disconnect response";
 					continue;
 				}
+				end = high_resolution_clock::now();
 				eMessageType type = *(eMessageType*)packet.getData();
 				if (type == eMessageType::CONNECTION) {
 					bool p = msg.Deserlialize(packet.getData(), packet.getDataSize());
 					if (p && msg.action == ConnectionMessage::DISCONNECT) {
+						//std::cout << "got proper disconnect response" << std::endl;
 						break;
 					}
 					else {
@@ -154,8 +175,15 @@ void RemoteControlServer::Disconnect() {
 		catch (RcpException& e) {
 			std::cout << e.what() << std::endl;
 		}
+
 		state = DISCONNECTED;
+		start2 = high_resolution_clock::now();
 		socket.disconnect();
+		end2 = high_resolution_clock::now();
+
+		std::cout << (double)duration_cast<microseconds>(end - start).count() * 0.001 << " ms" << std::endl; // DEBUG
+		std::cout << (double)duration_cast<microseconds>(end2 - start2).count() * 0.001 << " ms" << std::endl; // DEBUG
+
 	}
 }
 
@@ -223,8 +251,16 @@ void RemoteControlServer::MH_Authentication(const void* message, size_t length) 
 			// server should never get this
 			break;
 		case ConnectionMessage::DISCONNECT:
+			// send a disconnect response to client
+			try {
+				socket.send(message, length, true);
+			}
+			catch (...) {}
+			// close connection
 			state = DISCONNECTED;
 			socket.disconnect();
+			// stop message thread
+			runMessageThread = false;
 	}
 }
 
@@ -238,4 +274,42 @@ void RemoteControlServer::MH_DeviceEnum(const void* message, size_t length) {
 
 void RemoteControlServer::MH_ChannelEnum(const void* message, size_t length) {
 
+}
+
+
+
+void RemoteControlServer::MessageThreadFunc() {
+	while (runMessageThread) {
+		try {
+			RcpPacket packet;
+			socket.receive(packet);
+			messageDecoder.ProcessMessage(packet.getData(), packet.getDataSize());
+		}
+		catch (RcpException& e) {
+			
+		}
+	}
+}
+
+void RemoteControlServer::StartMessageThread() {
+	if (!runMessageThread) {
+		// join old thread, if not done yet
+		if (messageThread.joinable()) {
+			messageThread.join();
+		}
+
+		// start a new thread
+		runMessageThread = true;
+		messageThread = std::thread(
+			[this] { MessageThreadFunc(); }
+		);
+	}
+}
+
+void RemoteControlServer::StopMessageThread() {
+	runMessageThread = false;
+	socket.cancel();
+	if (messageThread.joinable()) {
+		messageThread.join();
+	}
 }

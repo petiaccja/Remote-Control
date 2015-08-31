@@ -160,7 +160,9 @@ public:
 	void connect(std::string address, uint16_t port, int timeout = std::numeric_limits<int>::max());
 
 	/// Close current connection.
-	void disconnect();
+	void disconnect() { disconnect1(); }
+	void disconnect1();
+	void disconnect2();
 
 	// --- Traffic --- //
 	/// Send raw packet over network.
@@ -207,7 +209,7 @@ private:
 
 	void startIoThread();
 	void stopIoThread();
-	void ioThreadFunction();
+	bool ioThreadFunction(); // returns true if it returns because it got a FIN, false otherwise
 
 	// --- Traffic data structures --- //
 

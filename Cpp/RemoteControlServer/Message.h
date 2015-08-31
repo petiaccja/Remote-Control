@@ -50,7 +50,7 @@ private:
 
 /// Base class for messages
 struct MessageBase {
-	virtual std::vector<uint8_t> Serialize() = 0;
+	virtual std::vector<uint8_t> Serialize() const = 0;
 	virtual bool Deserlialize(const void* data, size_t size) = 0;
 	virtual ~MessageBase() {}
 };
@@ -66,7 +66,7 @@ struct ServoMessage : public MessageBase {
 	int32_t channel;
 	float state;
 
-	std::vector<uint8_t> Serialize() override;
+	std::vector<uint8_t> Serialize() const override;
 	bool Deserlialize(const void* data, size_t size) override;
 	static constexpr size_t SerializedSize();
 };
@@ -85,7 +85,17 @@ struct ConnectionMessage : public MessageBase {
 	bool isOk;
 	std::vector<uint8_t> password;
 
-	std::vector<uint8_t> Serialize() override;
+	ConnectionMessage() = default;
+	ConnectionMessage(eAction action, bool isOk = false) : action(action), isOk(isOk) {
+	}
+	ConnectionMessage(eAction action, bool isOk, const char* password)
+		: action(action),
+		isOk(isOk),
+		password(password, password + strlen(password))
+	{
+	}
+
+	std::vector<uint8_t> Serialize() const override;
 	bool Deserlialize(const void* data, size_t size) override;
 };
 
@@ -105,7 +115,7 @@ struct EnumDevicesMessage : public MessageBase {
 
 	std::vector<DeviceInfo> devices;
 
-	std::vector<uint8_t> Serialize() override;
+	std::vector<uint8_t> Serialize() const override;
 	bool Deserlialize(const void* data, size_t size) override;
 };
 
@@ -119,6 +129,17 @@ struct EnumChannelsMessage : public MessageBase {
 	eDeviceType type;
 	std::vector<uint32_t> channels;
 
-	std::vector<uint8_t> Serialize() override;
+	std::vector<uint8_t> Serialize() const override;
 	bool Deserlialize(const void* data, size_t size) override;
 };
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Comparison operators, mostly for debugging
+
+bool operator==(const ConnectionMessage& lhs, const ConnectionMessage& rhs);
+bool operator!=(const ConnectionMessage& lhs, const ConnectionMessage& rhs);
+
+
+

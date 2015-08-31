@@ -39,7 +39,7 @@ void MessageDecoder::ProcessMessage(const void* message, size_t length) {
 
 // ServoMessage
 
-std::vector<uint8_t> ServoMessage::Serialize() {
+std::vector<uint8_t> ServoMessage::Serialize() const {
 	Serializer ser;
 	ser << (uint8_t)eMessageType::DEVICE_SERVO;
 	ser << (uint8_t)action;
@@ -75,7 +75,7 @@ constexpr size_t ServoMessage::SerializedSize() {
 
 // Authentication message
 
-std::vector<uint8_t> ConnectionMessage::Serialize() {
+std::vector<uint8_t> ConnectionMessage::Serialize() const {
 	Serializer ser;
 	ser << (uint8_t)eMessageType::CONNECTION;
 	ser << (uint8_t)action;
@@ -140,7 +140,7 @@ bool ConnectionMessage::Deserlialize(const void* data, size_t size) {
 
 // Device enumeration
 
-std::vector<uint8_t> EnumDevicesMessage::Serialize() {
+std::vector<uint8_t> EnumDevicesMessage::Serialize() const {
 	Serializer ser;
 	ser << (uint8_t)eMessageType::ENUM_DEVICES;
 	ser << (uint32_t)devices.size();
@@ -182,7 +182,7 @@ bool EnumDevicesMessage::Deserlialize(const void* data, size_t size) {
 
 // Channel enumeration
 
-std::vector<uint8_t> EnumChannelsMessage::Serialize() {
+std::vector<uint8_t> EnumChannelsMessage::Serialize() const {
 	Serializer ser;
 	ser << (uint8_t)eMessageType::ENUM_CHANNELS;
 	ser << (uint8_t)type;
@@ -218,4 +218,34 @@ bool EnumChannelsMessage::Deserlialize(const void* data, size_t size) {
 	}
 
 	return true;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Comparison operators, mostly for debugging
+
+bool operator==(const ConnectionMessage& lhs, const ConnectionMessage& rhs) {
+	if (lhs.action != rhs.action) {
+		return false;
+	}
+	switch (lhs.action) {
+		case ConnectionMessage::CONNECTION_REPLY:
+			return lhs.isOk == rhs.isOk;
+		case ConnectionMessage::CONNECTION_REQUEST:
+			return true;
+		case ConnectionMessage::PASSWORD_REPLY:
+			return lhs.password.size() == rhs.password.size() &&
+				memcmp(lhs.password.data(), rhs.password.data(), lhs.password.size()) == 0;
+		case ConnectionMessage::PASSWORD_REQUEST:
+			return true;
+		case ConnectionMessage::DISCONNECT:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool operator!=(const ConnectionMessage& lhs, const ConnectionMessage& rhs) {
+	return !(lhs == rhs);
 }

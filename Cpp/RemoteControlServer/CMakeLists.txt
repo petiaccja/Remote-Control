@@ -15,3 +15,9 @@ FILE(GLOB_RECURSE headers *.h*)
 
 # Project
 add_library(RemoteControlServer STATIC ${sources} ${headers})
+
+
+target_link_libraries(RemoteControlServer
+	optimized gtest
+	debug gtest-d
+	RemoteControlProtocol)

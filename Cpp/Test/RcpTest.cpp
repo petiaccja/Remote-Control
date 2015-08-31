@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "tests.h"
 
 #include <iostream>
@@ -10,6 +14,8 @@
 #include <RemoteControlProtocol/RcpSocket.h>
 #include <future>
 #include <SFML/Network.hpp>
+
+
 
 using namespace std;
 

@@ -8,6 +8,9 @@
 #include <RemoteControlServer/Message.h>
 #include <RemoteControlServer/RemoteCOntrolServer.h>
 
+#include <RemoteControlServer/TEST_RemoteControlServer.h>
+
+
 
 #include <iostream>
 #include <iomanip>
@@ -33,37 +36,15 @@ void TestServoManager();
 bool TestServerConnection();
 
 int RcsTest() {
+	RCS_RunAllTest();
+
 	/*
-	// test serializetion of primitives
-	if (TestSerializer()) {
-		cout << "Serializer works!" << endl;
-	}
-	else {
-		cout << "Serializer failed" << endl;
-	}
+	TEST_RemoteControlServer tester;
 
-	// test serialization of messages 
-	if (TestMessageSerialization()) {
-		cout << "Message serialization succeeded!" << endl;
-	}
-	else {
-		cout << "Message serialization failed" << endl;
-	}
-
-	// test message decoder/demuxer of messages 
-	if (TestDecoder()) {
-		cout << "Message decoder works!" << endl;
-	}
-	else {
-		cout << "Message decoder failed" << endl;
-	}
+	tester.RCS_Listen_Okay();
+	tester.RCS_Listen_SocketFailure();
+	tester.RCS_Listen_ProtocolVoilation();
 	*/
-	if (TestServerConnection()) {
-		cout << "Server connection works!" << endl;
-	}
-	else {
-		cout << "Server connection failed" << endl;
-	}
 
 	_getch();
 	return 0;

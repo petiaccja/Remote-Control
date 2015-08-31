@@ -51,4 +51,27 @@ public:
 	const T& operator[](size_t index) const {
 		return queue_type::c[index];
 	}
+
+	// iterators
+	using iterator = typename std::deque<T>::iterator;
+	using const_iterator = typename std::deque<T>::const_iterator;
+
+	iterator begin() {
+		return queue_type::c.begin();
+	}
+	iterator end() {
+		return queue_type::c.end();
+	}
+	const_iterator begin() const {
+		return queue_type::c.begin();
+	}
+	const_iterator end() const {
+		return queue_type::c.end();
+	}
+	const_iterator cbegin() const {
+		return queue_type::c.cbegin();
+	}
+	const_iterator cend() const {
+		return queue_type::c.cend();
+	}
 };
