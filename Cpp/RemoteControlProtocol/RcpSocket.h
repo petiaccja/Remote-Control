@@ -52,12 +52,13 @@ private:
 
 	// RcpHeader is an internal helper structure for managing packet headers.
 	struct RcpHeader {
+		RcpHeader(uint32_t sequenceNumber = 0, uint32_t batchNumber = 0, uint32_t flags = 0) :
+			sequenceNumber(sequenceNumber), batchNumber(batchNumber), flags(flags) {}
 		uint32_t sequenceNumber;
 		uint32_t batchNumber;
 		uint32_t flags;
-		static std::array<unsigned char, 12> serialize(const RcpHeader& h);
-		static RcpHeader deserialize(const void* data, size_t size);
-		inline std::array<unsigned char, 12> serialize() const { return serialize(*this); }
+		bool deserialize(const void* data, size_t size);
+		inline std::array<unsigned char, 12> serialize() const;
 	};
 	// Flags that can be associated with a packet header.
 	enum eFlags : uint32_t {
@@ -87,9 +88,17 @@ private:
 
 	// Internal states of the socket.
 	enum eState {
-		DISCONNECTED,
+		CLOSED,
+		INITIATE,
+		SYN_SENT,
+		SYN_WAIT,
+		SYN_SIMOULTANEOUS,
+		SYN_SIMOULTANEOUS_ACKED,
 		CONNECTED,
+		CLOSE_WAIT,
+		FIN_WAIT,
 		CLOSING,
+		SYN_ACK_SENT,
 	};
 
 public:
@@ -211,6 +220,10 @@ private:
 	void stopIoThread();
 	bool ioThreadFunction(); // returns true if it returns because it got a FIN, false otherwise
 
+
+	void ioThreadFunction2();
+	eState HandleConnected();
+
 	// --- Traffic data structures --- //
 
 	// Incoming packets	
@@ -265,6 +278,7 @@ private:
 	void replyClose(); // perform closing procedure after getting a FIN
 	std::vector<uint8_t> makePacket(const RcpHeader& header, const void* data, size_t size);
 	bool decodeDatagram(const sf::Packet& packet, const sf::IpAddress& sender, uint16_t port, RcpHeader& rcpHeader, RcpPacket& rcpPacket);
+	bool decodeHeader(const sf::Packet& packet, RcpHeader& header);
 	eClosestEventType getNextEvent(EventArgs& args);
 
 	// --- Cancellation --- //
